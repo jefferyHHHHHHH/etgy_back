@@ -4,46 +4,46 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const app_1 = __importDefault(require("./app"));
-const dotenv_1 = __importDefault(require("dotenv"));
 const prisma_1 = require("./config/prisma");
 const redis_1 = __importDefault(require("./config/redis"));
-dotenv_1.default.config();
-const PORT = process.env.PORT || 3000;
+const env_1 = require("./config/env");
+const logger_1 = require("./config/logger");
+const PORT = env_1.env.PORT;
 const startServer = async () => {
     try {
-        console.log('⏳ Starting server...');
+        logger_1.logger.info('Starting server...');
         // 1. Test Database Connection
         await prisma_1.prisma.$connect();
-        console.log('✅ Database connected successfully');
+        logger_1.logger.info('Database connected successfully');
         // 2. Test Redis Connection
         if (redis_1.default.status === 'ready' || redis_1.default.status === 'connecting') {
-            console.log('✅ Redis connected successfully');
+            logger_1.logger.info('Redis connected successfully');
         }
         else {
             await redis_1.default.connect(); // Explicit connect if lazy
-            console.log('✅ Redis connected successfully');
+            logger_1.logger.info('Redis connected successfully');
         }
         // 3. Start Express Server
         const server = app_1.default.listen(PORT, () => {
-            console.log(`🚀 Server running on http://localhost:${PORT}`);
+            logger_1.logger.info({ port: PORT }, 'Server running');
         });
         // Graceful Shutdown
         const shutdown = async () => {
-            console.log('🛑 Shutting down server...');
+            logger_1.logger.info('Shutting down server...');
             server.close(() => {
-                console.log('   Http server closed');
+                logger_1.logger.info('Http server closed');
             });
             await prisma_1.prisma.$disconnect();
-            console.log('   Prisma disconnected');
+            logger_1.logger.info('Prisma disconnected');
             await redis_1.default.quit();
-            console.log('   Redis disconnected');
+            logger_1.logger.info('Redis disconnected');
             process.exit(0);
         };
         process.on('SIGTERM', shutdown);
         process.on('SIGINT', shutdown);
     }
     catch (error) {
-        console.error('❌ Server failed to start:', error);
+        logger_1.logger.error({ err: error }, 'Server failed to start');
         process.exit(1);
     }
 };
