@@ -89,7 +89,17 @@
 
 1. **安装依赖**: `npm install`
 2. **环境配置**: 复制 `.env.example` 为 `.env`，配置 DB/Redis 连接信息。
-3. **数据库同步**: `npx prisma generate` (生成 Client), `npx prisma db push` (同步 Schema)。
+3. **启动基础设施 (MySQL + Redis)**:
+  - 确保已安装并启动 Docker Desktop
+  - Windows 常见问题：如果出现 `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified`，通常是 Docker Desktop 未启动（或 Docker Desktop Service 未运行/需要管理员权限）
+  - 启动命令：`docker compose up -d`（或旧版：`docker-compose up -d`）
+  - 注意：本项目默认将 Docker MySQL 映射到宿主机 `3307`（避免你电脑上已安装的 MySQL 占用 `3306`），因此 `.env` 里的 `DATABASE_URL` 也是 `localhost:3307`
+4. **数据库同步**:
+  - `npm run db:generate`
+  - `npm run db:push`
+5. **初始化演示数据（可选，推荐新手做）**:
+  - `npm run db:seed`
+6. **启动开发服务**: `npm run dev`
 
 ### 5.2 常用脚本
 

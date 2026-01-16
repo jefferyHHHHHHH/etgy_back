@@ -1,4 +1,4 @@
-import { prisma } from '../server';
+import { prisma } from '../config/prisma';
 import { AuditAction } from '../types/enums';
 
 export class AuditService {

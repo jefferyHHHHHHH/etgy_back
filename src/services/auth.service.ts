@@ -1,14 +1,14 @@
-import { prisma } from '../server';
+import { prisma } from '../config/prisma';
 import { generateToken } from '../utils/token';
 // import { UserRole } from '@prisma/client';
-import { UserRole } from '../types/enums';
-// import bcrypt from 'bcrypt'; // TODO: Install bcrypt
+import { UserRole, UserStatus } from '../types/enums';
+import bcrypt from 'bcryptjs';
 
 export class AuthService {
   /**
-   * Mock Login for MVP (Real implementation needs bcrypt comparison)
+   * Password-based login
    */
-  static async login(username: string, role: UserRole) {
+  static async login(username: string, password: string, role?: UserRole) {
     // 1. Find User
     const user = await prisma.user.findUnique({
       where: { username },
@@ -18,12 +18,18 @@ export class AuthService {
       throw new Error('User not found');
     }
 
-    // 2. Validate Role (Optional strict check)
-    if (user.role !== role) {
+    // 2. Optional strict check if role is provided by client
+    if (role && user.role !== role) {
       throw new Error('Role mismatch');
     }
 
-    // 3. Generate Token
+    // 3. Validate Password
+    const ok = await bcrypt.compare(password, user.passwordHash);
+    if (!ok) {
+      throw new Error('Invalid credentials');
+    }
+
+    // 4. Generate Token
     const token = generateToken({
       userId: user.id,
       role: user.role,
@@ -34,9 +40,9 @@ export class AuthService {
   }
 
   /**
-   * Mock Register for MVP (Just creates base user)
+   * Register base user (Dev helper).
    */
-  static async register(username: string, role: UserRole) {
+  static async register(username: string, password: string, role: UserRole) {
     // Check if exists
     const existing = await prisma.user.findUnique({
       where: { username },
@@ -45,13 +51,15 @@ export class AuthService {
       throw new Error('Username already exists');
     }
 
+    const passwordHash = await bcrypt.hash(password, 10);
+
     // Create User
     const user = await prisma.user.create({
       data: {
         username,
-        passwordHash: 'hashed_password_placeholder', // TODO: Use bcrypt
+        passwordHash,
         role,
-        status: 'ACTIVE',
+        status: UserStatus.ACTIVE,
       },
     });
 

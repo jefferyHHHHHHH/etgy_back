@@ -23,3 +23,13 @@ export const generateToken = (payload: TokenPayload): string => {
 export const verifyToken = (token: string): TokenPayload => {
   return jwt.verify(token, JWT_SECRET) as TokenPayload;
 };
+
+export const getTokenTtlSeconds = (token: string): number => {
+  const decoded = jwt.decode(token) as null | { exp?: number };
+  if (!decoded?.exp) {
+    // Fallback: 7 days
+    return 7 * 24 * 60 * 60;
+  }
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  return Math.max(decoded.exp - nowSeconds, 0);
+};

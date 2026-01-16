@@ -1,14 +1,11 @@
 import app from './app';
 import dotenv from 'dotenv';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './config/prisma';
 import redisClient from './config/redis';
 
 dotenv.config();
 
 const PORT = process.env.PORT || 3000;
-
-// Initialize Prisma Client
-export const prisma: any = new PrismaClient();
 
 const startServer = async () => {
   try {
@@ -19,7 +16,7 @@ const startServer = async () => {
     console.log('✅ Database connected successfully');
 
     // 2. Test Redis Connection
-    if (redisClient.status === 'ready' || redisClient.status === 'connect') {
+    if (redisClient.status === 'ready' || redisClient.status === 'connecting') {
       console.log('✅ Redis connected successfully');
     } else {
       await redisClient.connect(); // Explicit connect if lazy

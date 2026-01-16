@@ -2,16 +2,18 @@ import { Request, Response } from 'express';
 import { AuthService } from '../services/auth.service';
 // import { UserRole } from '@prisma/client';
 import { UserRole } from '../types/enums';
+import redisClient from '../config/redis';
+import { getTokenTtlSeconds } from '../utils/token';
 
 export class AuthController {
   static async login(req: Request, res: Response) {
     try {
-      const { username, role } = req.body;
-      if (!username || !role) {
-        return res.status(400).json({ code: 400, message: 'Missing username or role' });
+      const { username, password, role } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ code: 400, message: 'Missing username or password' });
       }
 
-      const result = await AuthService.login(username, role as UserRole);
+      const result = await AuthService.login(username, password, role as UserRole | undefined);
       res.json({
         code: 200,
         message: 'Login success',
@@ -24,10 +26,14 @@ export class AuthController {
 
   static async register(req: Request, res: Response) {
     try {
-      const { username, role } = req.body;
+      const { username, password, role } = req.body;
       // In real scenario, would handle profile creation here too
+
+      if (!username || !password || !role) {
+        return res.status(400).json({ code: 400, message: 'Missing username, password, or role' });
+      }
       
-      const user = await AuthService.register(username, role as UserRole);
+      const user = await AuthService.register(username, password, role as UserRole);
       res.json({
         code: 201,
         message: 'Register success',
@@ -35,6 +41,26 @@ export class AuthController {
       });
     } catch (error: any) {
       res.status(400).json({ code: 400, message: error.message || 'Register failed' });
+    }
+  }
+
+  static async logout(req: Request, res: Response) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(400).json({ code: 400, message: 'Missing Bearer token' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    const ttl = getTokenTtlSeconds(token);
+
+    try {
+      if (ttl > 0 && redisClient.status === 'ready') {
+        await redisClient.set(`blacklist:${token}`, '1', 'EX', ttl);
+      }
+      return res.json({ code: 200, message: 'Logout success' });
+    } catch (error) {
+      // Fail-open: client can discard token even if we cannot blacklist.
+      return res.json({ code: 200, message: 'Logout success (blacklist unavailable)' });
     }
   }
 }

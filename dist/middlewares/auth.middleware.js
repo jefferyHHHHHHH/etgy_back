@@ -14,13 +14,16 @@ const authMiddleware = async (req, res, next) => {
     const token = authHeader.split(' ')[1];
     try {
         // 1. Check Redis Blacklist (Logout)
-        // If Redis is down, we might fail-open or fail-closed. 
-        // Here we fail-open (allow) if Redis error, but log it. 
-        // Ideally use a circuit breaker.
+        // Fail-open if Redis is unavailable.
         if (redis_1.default.status === 'ready') {
-            const isBlacklisted = await redis_1.default.get(`blacklist:${token}`);
-            if (isBlacklisted) {
-                return res.status(401).json({ code: 401, message: 'Unauthorized: Token revoked' });
+            try {
+                const isBlacklisted = await redis_1.default.get(`blacklist:${token}`);
+                if (isBlacklisted) {
+                    return res.status(401).json({ code: 401, message: 'Unauthorized: Token revoked' });
+                }
+            }
+            catch (redisError) {
+                console.warn('Redis blacklist check failed (fail-open):', redisError);
             }
         }
         // 2. Verify Token

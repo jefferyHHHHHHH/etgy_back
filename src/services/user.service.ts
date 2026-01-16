@@ -1,6 +1,6 @@
-import { prisma } from '../server';
+import { prisma } from '../config/prisma';
 // import { UserRole, VolunteerStatus, Gender } from '@prisma/client';
-import { UserRole, VolunteerStatus, Gender } from '../types/enums';
+import { UserRole, UserStatus, VolunteerStatus, Gender } from '../types/enums';
 
 export class UserService {
   
@@ -18,7 +18,7 @@ export class UserService {
         adminProfile: {
           include: { college: true }
         }
-      } as any
+      }
     });
     
     if (!user) throw new Error('User not found');
@@ -41,8 +41,8 @@ export class UserService {
       data: {
         username: data.username,
         passwordHash: 'default_password', 
-        role: 'CHILD',
-        status: 'ACTIVE',
+        role: UserRole.CHILD,
+        status: UserStatus.ACTIVE,
         childProfile: {
           create: {
             realName: data.realName,
@@ -77,7 +77,7 @@ export class UserService {
         studentId: data.studentId,
         collegeId: data.collegeId,
         phone: data.phone,
-        status: 'IN_SCHOOL'
+        status: VolunteerStatus.IN_SCHOOL
       }
     });
     

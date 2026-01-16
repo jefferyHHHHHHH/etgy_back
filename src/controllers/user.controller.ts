@@ -40,12 +40,12 @@ export class UserController {
       const user = req.user!;
       let collegeId: number | undefined;
 
-      if (user.role === 'COLLEGE_ADMIN') {
+      if (user.role === UserRole.COLLEGE_ADMIN) {
         const profile = await UserService.getUserProfile(user.userId);
         collegeId = profile?.adminProfile?.collegeId || undefined;
       }
       // If Platform Admin, optional query param
-      else if (user.role === 'PLATFORM_ADMIN') {
+      else if (user.role === UserRole.PLATFORM_ADMIN) {
         collegeId = req.query.collegeId ? Number(req.query.collegeId) : undefined;
       } else {
         return res.status(403).json({ code: 403, message: 'Forbidden' });

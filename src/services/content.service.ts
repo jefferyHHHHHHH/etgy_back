@@ -1,4 +1,4 @@
-import { prisma } from '../server';
+import { prisma } from '../config/prisma';
 import { VideoStatus, AuditAction, UserRole } from '../types/enums';
 import { AuditService } from './audit.service';
 

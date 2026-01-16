@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserController = void 0;
 const user_service_1 = require("../services/user.service");
+// import { UserRole, VolunteerStatus } from '@prisma/client';
+const enums_1 = require("../types/enums");
 class UserController {
     /**
      * GET /api/users/me
@@ -37,12 +39,12 @@ class UserController {
             // If College Admin, force collegeId filter
             const user = req.user;
             let collegeId;
-            if (user.role === 'COLLEGE_ADMIN') {
+            if (user.role === enums_1.UserRole.COLLEGE_ADMIN) {
                 const profile = await user_service_1.UserService.getUserProfile(user.userId);
                 collegeId = profile?.adminProfile?.collegeId || undefined;
             }
             // If Platform Admin, optional query param
-            else if (user.role === 'PLATFORM_ADMIN') {
+            else if (user.role === enums_1.UserRole.PLATFORM_ADMIN) {
                 collegeId = req.query.collegeId ? Number(req.query.collegeId) : undefined;
             }
             else {

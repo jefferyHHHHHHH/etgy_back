@@ -11,6 +11,7 @@ const morgan_1 = __importDefault(require("morgan"));
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const auth_routes_1 = __importDefault(require("./routes/auth.routes"));
 const user_routes_1 = __importDefault(require("./routes/user.routes"));
+const content_routes_1 = __importDefault(require("./routes/content.routes"));
 // Initialize Express App
 const app = (0, express_1.default)();
 // Global Middlewares
@@ -31,6 +32,8 @@ app.get('/health', (req, res) => {
 // Routes
 app.use('/api/auth', auth_routes_1.default);
 app.use('/api/users', user_routes_1.default);
+// Videos / Content
+app.use('/api/videos', content_routes_1.default);
 // 404 Handler
 app.use((req, res, next) => {
     res.status(404).json({ error: 'Not Found' });

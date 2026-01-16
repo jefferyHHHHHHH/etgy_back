@@ -28,11 +28,28 @@ app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// API index (helps beginners avoid confusion with 404)
+app.get('/api', (req: Request, res: Response) => {
+  res.status(200).json({
+    code: 200,
+    message: 'API is running. Use POST for auth endpoints.',
+    data: {
+      auth: {
+        login: 'POST /api/auth/login',
+        register: 'POST /api/auth/register',
+        logout: 'POST /api/auth/logout',
+      },
+      health: 'GET /health',
+    },
+  });
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 
-
+// Videos / Content
+app.use('/api/videos', contentRoutes);
 
 
 // 404 Handler

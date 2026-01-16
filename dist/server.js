@@ -3,23 +3,20 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.prisma = void 0;
 const app_1 = __importDefault(require("./app"));
 const dotenv_1 = __importDefault(require("dotenv"));
-const client_1 = require("@prisma/client");
+const prisma_1 = require("./config/prisma");
 const redis_1 = __importDefault(require("./config/redis"));
 dotenv_1.default.config();
 const PORT = process.env.PORT || 3000;
-// Initialize Prisma Client
-exports.prisma = new client_1.PrismaClient();
 const startServer = async () => {
     try {
         console.log('⏳ Starting server...');
         // 1. Test Database Connection
-        await exports.prisma.$connect();
+        await prisma_1.prisma.$connect();
         console.log('✅ Database connected successfully');
         // 2. Test Redis Connection
-        if (redis_1.default.status === 'ready' || redis_1.default.status === 'connect') {
+        if (redis_1.default.status === 'ready' || redis_1.default.status === 'connecting') {
             console.log('✅ Redis connected successfully');
         }
         else {
@@ -36,7 +33,7 @@ const startServer = async () => {
             server.close(() => {
                 console.log('   Http server closed');
             });
-            await exports.prisma.$disconnect();
+            await prisma_1.prisma.$disconnect();
             console.log('   Prisma disconnected');
             await redis_1.default.quit();
             console.log('   Redis disconnected');

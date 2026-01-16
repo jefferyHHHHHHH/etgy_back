@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ContentService = void 0;
-const server_1 = require("../server");
+const prisma_1 = require("../config/prisma");
 const enums_1 = require("../types/enums");
 const audit_service_1 = require("./audit.service");
 class ContentService {
@@ -11,7 +11,7 @@ class ContentService {
     static async createVideo(uploaderId, collegeId, data) {
         if (!collegeId)
             throw new Error('Uploader must belong to a college');
-        const video = await server_1.prisma.video.create({
+        const video = await prisma_1.prisma.video.create({
             data: {
                 title: data.title,
                 url: data.url,
@@ -43,7 +43,7 @@ class ContentService {
         if (filter.search) {
             where.title = { contains: filter.search };
         }
-        return await server_1.prisma.video.findMany({
+        return await prisma_1.prisma.video.findMany({
             where,
             orderBy: { createdAt: 'desc' },
             include: {
@@ -56,12 +56,12 @@ class ContentService {
      * Submit for Review
      */
     static async submitReview(videoId, userId) {
-        const video = await server_1.prisma.video.findUnique({ where: { id: videoId } });
+        const video = await prisma_1.prisma.video.findUnique({ where: { id: videoId } });
         if (!video)
             throw new Error('Video not found');
         if (video.uploaderId !== userId)
             throw new Error('Not owner');
-        const updated = await server_1.prisma.video.update({
+        const updated = await prisma_1.prisma.video.update({
             where: { id: videoId },
             data: { status: enums_1.VideoStatus.REVIEW }
         });
@@ -72,7 +72,7 @@ class ContentService {
      */
     static async auditVideo(adminUserId, videoId, pass, reason) {
         const newStatus = pass ? enums_1.VideoStatus.PUBLISHED : enums_1.VideoStatus.REJECTED;
-        const items = await server_1.prisma.video.update({
+        const items = await prisma_1.prisma.video.update({
             where: { id: videoId },
             data: {
                 status: newStatus,
