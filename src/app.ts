@@ -4,6 +4,9 @@ import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
+import authRoutes from './routes/auth.routes';
+import userRoutes from './routes/user.routes';
+import contentRoutes from './routes/content.routes';
 
 // Initialize Express App
 const app = express();
@@ -25,8 +28,12 @@ app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Routes Placeholder
-// app.use('/api/v1', routes);
+// Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+
+
+
 
 // 404 Handler
 app.use((req: Request, res: Response, next: NextFunction) => {
