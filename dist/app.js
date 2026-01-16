@@ -9,14 +9,12 @@ const helmet_1 = __importDefault(require("helmet"));
 const compression_1 = __importDefault(require("compression"));
 const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
-const auth_routes_1 = __importDefault(require("./routes/auth.routes"));
-const user_routes_1 = __importDefault(require("./routes/user.routes"));
-const content_routes_1 = __importDefault(require("./routes/content.routes"));
 const requestId_middleware_1 = require("./middlewares/requestId.middleware");
 const logger_middleware_1 = require("./middlewares/logger.middleware");
 const error_middleware_1 = require("./middlewares/error.middleware");
 const prisma_1 = require("./config/prisma");
 const redis_1 = __importDefault(require("./config/redis"));
+const registerModules_1 = require("./modules/registerModules");
 // Initialize Express App
 const app = (0, express_1.default)();
 // Global Middlewares
@@ -83,10 +81,7 @@ app.get('/api', (req, res) => {
     });
 });
 // Routes
-app.use('/api/auth', auth_routes_1.default);
-app.use('/api/users', user_routes_1.default);
-// Videos / Content
-app.use('/api/videos', content_routes_1.default);
+(0, registerModules_1.registerModules)(app);
 // 404 + Error handler
 app.use(error_middleware_1.notFoundHandler);
 app.use(error_middleware_1.errorHandler);

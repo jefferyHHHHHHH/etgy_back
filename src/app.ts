@@ -4,14 +4,12 @@ import helmet from 'helmet';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
-import authRoutes from './routes/auth.routes';
-import userRoutes from './routes/user.routes';
-import contentRoutes from './routes/content.routes';
 import { requestIdMiddleware } from './middlewares/requestId.middleware';
 import { loggerMiddleware } from './middlewares/logger.middleware';
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware';
 import { prisma } from './config/prisma';
 import redisClient from './config/redis';
+import { registerModules } from './modules/registerModules';
 
 // Initialize Express App
 const app = express();
@@ -89,11 +87,7 @@ app.get('/api', (req: Request, res: Response) => {
 });
 
 // Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-
-// Videos / Content
-app.use('/api/videos', contentRoutes);
+registerModules(app);
 
 
 // 404 + Error handler
