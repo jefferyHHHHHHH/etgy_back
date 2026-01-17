@@ -5,11 +5,23 @@ import { authMiddleware, requireRole } from '../middlewares/auth.middleware';
 import { UserRole } from '../types/enums';
 import { validateBody, validateParams, validateQuery } from '../middlewares/validate.middleware';
 import { VideoStatus } from '../types/enums';
+import { apiResponse, BaseResponseSchema, ErrorResponseSchema, registerPath } from '../docs/openapi';
+import { VideoSchema } from '../docs/schemas';
 
 const router = Router();
 
 const idParamSchema = z.object({
 	id: z.string().regex(/^\d+$/, 'id must be a positive integer'),
+});
+
+const createVideoBodySchema = z.object({
+	title: z.string().min(1),
+	url: z.string().min(1),
+	intro: z.string().optional(),
+	coverUrl: z.string().optional(),
+	duration: z.coerce.number().int().positive().optional(),
+	gradeRange: z.string().optional(),
+	subjectTag: z.string().optional(),
 });
 
 const listVideosQuerySchema = z.object({
@@ -31,6 +43,121 @@ const auditBodySchema = z.object({
 
 const offlineBodySchema = z.object({
 	reason: z.string().optional(),
+});
+
+// OpenAPI registration (single source of truth = Zod schemas)
+registerPath({
+	method: 'get',
+	path: '/api/videos',
+	summary: '获取视频列表（公开）',
+	description: '游客/儿童仅可获取已发布(PUBLISHED)内容；search 或请求非 PUBLISHED 时需登录。',
+	request: {
+		query: listVideosQuerySchema,
+	},
+	responses: {
+		200: {
+			description: 'Success',
+			content: {
+				'application/json': {
+					schema: apiResponse(z.array(VideoSchema)),
+				},
+			},
+		},
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'get',
+	path: '/api/videos/{id}',
+	summary: '获取视频详情（公开）',
+	request: { params: idParamSchema },
+	responses: {
+		200: { description: 'Success', content: { 'application/json': { schema: apiResponse(VideoSchema) } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/videos',
+	summary: '创建视频草稿（志愿者）',
+	security: [{ bearerAuth: [] }],
+	request: {
+		body: {
+			description: 'Create video draft',
+			content: { 'application/json': { schema: createVideoBodySchema } },
+		},
+	},
+	responses: {
+		201: { description: 'Created', content: { 'application/json': { schema: apiResponse(VideoSchema) } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/videos/{id}/submit',
+	summary: '提交视频审核（志愿者）',
+	security: [{ bearerAuth: [] }],
+	request: { params: idParamSchema },
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: BaseResponseSchema } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/videos/{id}/audit',
+	summary: '审核视频（学院管理员）',
+	security: [{ bearerAuth: [] }],
+	request: {
+		params: idParamSchema,
+		body: { content: { 'application/json': { schema: auditBodySchema } } },
+	},
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(VideoSchema) } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		409: { description: 'Conflict', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/videos/{id}/publish',
+	summary: '发布视频（志愿者）',
+	security: [{ bearerAuth: [] }],
+	request: { params: idParamSchema },
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(VideoSchema) } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/videos/{id}/offline',
+	summary: '下架视频（志愿者/管理员）',
+	security: [{ bearerAuth: [] }],
+	request: {
+		params: idParamSchema,
+		body: { content: { 'application/json': { schema: offlineBodySchema } } },
+	},
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(VideoSchema) } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		409: { description: 'Conflict', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
 });
 
 // Public listing (Published videos)
@@ -71,7 +198,7 @@ router.use(authMiddleware);
 
 // Volunteer operations
 // POST /api/videos - Upload
-router.post('/', requireRole([UserRole.VOLUNTEER]), ContentController.createVideo);
+router.post('/', requireRole([UserRole.VOLUNTEER]), validateBody(createVideoBodySchema), ContentController.createVideo);
 
 // POST /api/videos/:id/submit - Submit for review
 router.post(

@@ -4,6 +4,8 @@ import { authMiddleware, requireRole } from '../middlewares/auth.middleware';
 import { validateBody, validateParams } from '../middlewares/validate.middleware';
 import { LiveController } from '../controllers/live.controller';
 import { UserRole } from '../types/enums';
+import { apiResponse, BaseResponseSchema, ErrorResponseSchema, registerPath } from '../docs/openapi';
+import { LiveRoomSchema } from '../docs/schemas';
 
 const router = Router();
 
@@ -21,6 +23,56 @@ const createLiveBodySchema = z.object({
 const auditBodySchema = z.object({
   pass: z.coerce.boolean(),
   reason: z.string().optional(),
+});
+
+// OpenAPI registration
+registerPath({
+  method: 'post',
+  path: '/api/live',
+  summary: '创建直播草稿（志愿者）',
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      content: { 'application/json': { schema: createLiveBodySchema } },
+    },
+  },
+  responses: {
+    201: { description: 'Created', content: { 'application/json': { schema: apiResponse(LiveRoomSchema) } } },
+    400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registerPath({
+  method: 'post',
+  path: '/api/live/{id}/submit',
+  summary: '提交直播审核（志愿者）',
+  security: [{ bearerAuth: [] }],
+  request: { params: idParamSchema },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: apiResponse(LiveRoomSchema) } } },
+    400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registerPath({
+  method: 'post',
+  path: '/api/live/{id}/audit',
+  summary: '审核直播（学院管理员）',
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: idParamSchema,
+    body: { content: { 'application/json': { schema: auditBodySchema } } },
+  },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: apiResponse(LiveRoomSchema) } } },
+    400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    409: { description: 'Conflict', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
 });
 
 router.use(authMiddleware);

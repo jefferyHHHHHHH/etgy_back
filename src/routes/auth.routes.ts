@@ -4,6 +4,7 @@ import { AuthController } from '../controllers/auth.controller';
 import { authMiddleware } from '../middlewares/auth.middleware';
 import { validateBody } from '../middlewares/validate.middleware';
 import { UserRole } from '../types/enums';
+import { apiResponse, BaseResponseSchema, ErrorResponseSchema, registerPath } from '../docs/openapi';
 
 const router = Router();
 
@@ -17,6 +18,64 @@ const registerBodySchema = z.object({
 	username: z.string().min(3),
 	password: z.string().min(6),
 	role: z.nativeEnum(UserRole),
+});
+
+// OpenAPI registration
+registerPath({
+	method: 'post',
+	path: '/api/auth/login',
+	summary: '登录',
+	request: {
+		body: {
+			content: {
+				'application/json': {
+					schema: loginBodySchema,
+				},
+			},
+		},
+	},
+	responses: {
+		200: {
+			description: 'Login success',
+			content: { 'application/json': { schema: apiResponse(z.object({ token: z.string(), user: z.any() })) } },
+		},
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/auth/register',
+	summary: '注册（开发辅助）',
+	request: {
+		body: {
+			content: {
+				'application/json': {
+					schema: registerBodySchema,
+				},
+			},
+		},
+	},
+	responses: {
+		201: {
+			description: 'Register success',
+			content: { 'application/json': { schema: apiResponse(z.any()) } },
+		},
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/auth/logout',
+	summary: '退出登录',
+	security: [{ bearerAuth: [] }],
+	responses: {
+		200: { description: 'Logout success', content: { 'application/json': { schema: BaseResponseSchema } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
 });
 
 // Beginner-friendly messages (browser address bar uses GET)
