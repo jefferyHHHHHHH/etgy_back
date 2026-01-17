@@ -15,11 +15,16 @@ const startServer = async () => {
     logger.info('Database connected successfully');
 
     // 2. Test Redis Connection
-    if (redisClient.status === 'ready' || redisClient.status === 'connecting') {
-      logger.info('Redis connected successfully');
-    } else {
-      await redisClient.connect(); // Explicit connect if lazy
-      logger.info('Redis connected successfully');
+    try {
+      if (redisClient.status === 'ready' || redisClient.status === 'connecting') {
+        logger.info('Redis connected successfully');
+      } else {
+        await redisClient.connect(); // Explicit connect if lazy
+        logger.info('Redis connected successfully');
+      }
+    } catch (redisError) {
+      // Fail-open: Redis is used for performance / token blacklist, but should not block local dev.
+      logger.warn({ err: redisError }, 'Redis unavailable, continuing without Redis');
     }
 
     // 3. Start Express Server
@@ -35,8 +40,15 @@ const startServer = async () => {
       });
       await prisma.$disconnect();
       logger.info('Prisma disconnected');
-      await redisClient.quit();
-      logger.info('Redis disconnected');
+
+      try {
+        if (redisClient.status === 'ready' || redisClient.status === 'connecting') {
+          await redisClient.quit();
+          logger.info('Redis disconnected');
+        }
+      } catch (redisError) {
+        logger.warn({ err: redisError }, 'Redis disconnect failed');
+      }
       process.exit(0);
     };
 

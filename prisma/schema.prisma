@@ -108,6 +108,7 @@ model College {
 enum VideoStatus {
   DRAFT     // Private, editable
   REVIEW    // Submitted for audit
+  APPROVED  // Passed review, waiting volunteer to publish
   PUBLISHED // Public for children
   REJECTED  // Rejected by admin
   OFFLINE   // Forced offline
@@ -125,6 +126,16 @@ model Video {
   
   status       VideoStatus @default(DRAFT)
   rejectReason String?
+
+  reviewedBy   Int?
+  reviewedAt   DateTime?
+
+  publishedBy  Int?
+  publishedAt  DateTime?
+
+  offlineBy    Int?
+  offlineAt    DateTime?
+  offlineReason String?
   
   uploaderId   Int
   uploader     VolunteerProfile @relation(fields: [uploaderId], references: [userId])

@@ -16,6 +16,9 @@ const envSchema = z.object({
 
   JWT_SECRET: z.string().min(16, 'JWT_SECRET should be at least 16 chars'),
   JWT_EXPIRES_IN: z.string().default('7d'),
+
+  // Docs
+  SWAGGER_ENABLED: z.coerce.boolean().default(true),
 });
 
 export const env = envSchema.parse(process.env);

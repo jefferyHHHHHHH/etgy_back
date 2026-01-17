@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma';
 import { VideoStatus, AuditAction, UserRole } from '../types/enums';
 import { AuditService } from './audit.service';
+import { HttpError } from '../utils/httpError';
 
 export class ContentService {
   
@@ -45,25 +46,165 @@ export class ContentService {
     collegeId?: number;
     uploaderId?: number;
     search?: string;
+	grade?: string;
+	subject?: string;
+	sort?: 'latest' | 'hot';
+	page?: number;
+	pageSize?: number;
+    viewerRole?: UserRole;
+    viewerUserId?: number;
+    viewerCollegeId?: number;
   }) {
     const where: any = {};
-    if (filter.status) where.status = filter.status;
-    if (filter.collegeId) where.collegeId = filter.collegeId;
-    if (filter.uploaderId) where.uploaderId = filter.uploaderId;
+
+	  const page = filter.page && Number.isFinite(filter.page) ? Math.max(1, filter.page) : 1;
+	  const pageSize = filter.pageSize && Number.isFinite(filter.pageSize) ? Math.min(50, Math.max(1, filter.pageSize)) : 20;
+	  const skip = (page - 1) * pageSize;
+
+    // Guest/public viewer: only published videos are accessible.
+    if (!filter.viewerRole) {
+      where.status = VideoStatus.PUBLISHED;
+      if (filter.status && filter.status !== VideoStatus.PUBLISHED) {
+        throw new HttpError(401, 'Unauthorized: login required to access non-published videos');
+      }
+
+	  // Defense-in-depth: searching requires login.
+	  if (filter.search && filter.search.trim().length > 0) {
+	    throw new HttpError(401, 'Unauthorized: login required to search');
+	  }
+    }
+
+    // Default visibility rules (PRD-aligned)
+    // - Child: only published (global, not bound to college)
+    // - Volunteer: only own videos
+    // - College admin: only own college
+    // - Platform admin: can filter freely
+    if (filter.viewerRole === UserRole.CHILD) {
+      // Children can browse ALL published content across colleges.
+      where.status = VideoStatus.PUBLISHED;
+
+      // Prevent bypass via query params
+      if (filter.status && filter.status !== VideoStatus.PUBLISHED) {
+        throw new HttpError(403, 'Forbidden: children can only access published videos');
+      }
+    }
+
+    if (filter.viewerRole === UserRole.VOLUNTEER) {
+      if (!filter.viewerUserId) throw new HttpError(401, 'Unauthorized');
+
+      // Strong scope: volunteers can only access their own videos.
+      where.uploaderId = filter.viewerUserId;
+    }
+
+    if (filter.viewerRole === UserRole.COLLEGE_ADMIN) {
+      if (!filter.viewerCollegeId) throw new HttpError(400, 'Admin must belong to a college');
+
+      // Strong scope: college admins can only access their own college.
+      where.collegeId = filter.viewerCollegeId;
+    }
+
+    // Explicit filters override defaults when provided
+    if (filter.viewerRole === UserRole.PLATFORM_ADMIN) {
+      if (filter.status) where.status = filter.status;
+      if (filter.collegeId) where.collegeId = filter.collegeId;
+      if (filter.uploaderId) where.uploaderId = filter.uploaderId;
+    } else {
+      // Non-platform roles can still pass some safe filters (like status=PUBLISHED for children)
+      if (filter.status && filter.viewerRole !== UserRole.CHILD) {
+        where.status = filter.status;
+      }
+      // NOTE: collegeId/uploaderId are treated as scope constraints for non-platform roles.
+    }
     
     // Simple search
     if (filter.search) {
-      where.title = { contains: filter.search };
+    where.OR = [
+      { title: { contains: filter.search } },
+      { intro: { contains: filter.search } },
+    ];
     }
 
-    return await prisma.video.findMany({
+  // Filters
+  if (filter.grade) {
+    // MVP: gradeRange stored as string like "1-3"; use contains as a pragmatic filter.
+    where.gradeRange = { contains: filter.grade };
+  }
+  if (filter.subject) {
+    where.subjectTag = { contains: filter.subject };
+  }
+
+  // Sorting
+  const sort = filter.sort ?? 'latest';
+  const orderBy =
+    sort === 'hot'
+      ? ([{ metrics: { playCount: 'desc' } }, { createdAt: 'desc' }] as any)
+      : ({ createdAt: 'desc' } as any);
+
+  const [total, items] = await Promise.all([
+    prisma.video.count({ where }),
+    prisma.video.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy,
+      skip,
+      take: pageSize,
       include: {
-        uploader: { select: { realName: true } },
-        metrics: true
-      }
+      uploader: { select: { realName: true } },
+      metrics: true,
+      },
+    }),
+  ]);
+
+  return { items, total, page, pageSize };
+  }
+
+  /**
+   * Get video detail with role-scoped authorization.
+   */
+  static async getVideoById(params: {
+    videoId: number;
+    viewerRole?: UserRole;
+    viewerUserId?: number;
+    viewerCollegeId?: number;
+  }) {
+    const { videoId, viewerRole, viewerUserId, viewerCollegeId } = params;
+
+    const video = await prisma.video.findUnique({
+      where: { id: videoId },
+      include: { uploader: { select: { realName: true, collegeId: true } }, metrics: true, college: true },
     });
+
+    if (!video) throw new HttpError(404, 'Video not found');
+
+    // Guest or child: only published
+    if (!viewerRole || viewerRole === UserRole.CHILD) {
+      if (video.status !== VideoStatus.PUBLISHED) {
+        throw new HttpError(404, 'Video not found');
+      }
+      return video;
+    }
+
+    // Platform admin: can view any status
+    if (viewerRole === UserRole.PLATFORM_ADMIN) {
+      return video;
+    }
+
+    // Volunteer: own videos + published videos
+    if (viewerRole === UserRole.VOLUNTEER) {
+      if (video.status === VideoStatus.PUBLISHED) return video;
+      if (!viewerUserId) throw new HttpError(401, 'Unauthorized');
+      if (video.uploaderId !== viewerUserId) throw new HttpError(404, 'Video not found');
+      return video;
+    }
+
+    // College admin: own college + published videos
+    if (viewerRole === UserRole.COLLEGE_ADMIN) {
+      if (video.status === VideoStatus.PUBLISHED) return video;
+      if (!viewerCollegeId) throw new HttpError(400, 'Admin must belong to a college');
+      if (video.collegeId !== viewerCollegeId) throw new HttpError(404, 'Video not found');
+      return video;
+    }
+
+    throw new HttpError(403, 'Forbidden');
   }
 
   /**
@@ -71,13 +212,25 @@ export class ContentService {
    */
   static async submitReview(videoId: number, userId: number) {
     const video = await prisma.video.findUnique({ where: { id: videoId } });
-    if (!video) throw new Error('Video not found');
-    if (video.uploaderId !== userId) throw new Error('Not owner');
+    if (!video) throw new HttpError(404, 'Video not found');
+    if (video.uploaderId !== userId) throw new HttpError(403, 'Forbidden: not owner');
+
+    const allowedStatuses: VideoStatus[] = [VideoStatus.DRAFT, VideoStatus.REJECTED];
+    if (!allowedStatuses.includes(video.status)) {
+      throw new HttpError(400, `Invalid status transition: ${video.status} -> REVIEW`);
+    }
 
     const updated = await prisma.video.update({
       where: { id: videoId },
-      data: { status: VideoStatus.REVIEW }
+      data: {
+        status: VideoStatus.REVIEW,
+        rejectReason: null,
+        reviewedBy: null,
+        reviewedAt: null,
+      }
     });
+
+    await AuditService.log(userId, AuditAction.UPDATE, String(videoId), 'Video', 'Submitted for review');
     return updated;
   }
 
@@ -85,23 +238,158 @@ export class ContentService {
    * Audit Video (Admin)
    */
   static async auditVideo(
-    adminUserId: number, 
-    videoId: number, 
-    pass: boolean, 
+    adminUserId: number,
+    adminRole: UserRole,
+    adminCollegeId: number | undefined,
+    videoId: number,
+    pass: boolean,
     reason?: string
   ) {
-    const newStatus = pass ? VideoStatus.PUBLISHED : VideoStatus.REJECTED;
-    const items = await prisma.video.update({
-      where: { id: videoId },
-      data: { 
+    // PRD: platform admin cannot participate in daily review.
+    if (adminRole !== UserRole.COLLEGE_ADMIN) {
+      throw new HttpError(403, 'Forbidden: only college admin can audit videos');
+    }
+    if (!adminCollegeId) {
+      throw new HttpError(400, 'Admin must belong to a college');
+    }
+    if (!pass && (!reason || !reason.trim())) {
+      throw new HttpError(400, 'Reject reason is required');
+    }
+
+    const newStatus = pass ? VideoStatus.APPROVED : VideoStatus.REJECTED;
+
+    // Strong-consistency "抢先制": only first update on REVIEW wins
+    const result = await prisma.video.updateMany({
+      where: {
+        id: videoId,
+        status: VideoStatus.REVIEW,
+        collegeId: adminCollegeId,
+      },
+      data: {
         status: newStatus,
-        rejectReason: reason || null
-      }
+        rejectReason: pass ? null : (reason || null),
+        reviewedBy: adminUserId,
+        reviewedAt: new Date(),
+      },
     });
+
+    if (result.count !== 1) {
+      const current = await prisma.video.findUnique({
+        where: { id: videoId },
+        select: { id: true, status: true, collegeId: true },
+      });
+
+      if (!current) throw new HttpError(404, 'Video not found');
+      if (current.collegeId !== adminCollegeId) throw new HttpError(403, 'Forbidden: cross-college access');
+      if (current.status !== VideoStatus.REVIEW) {
+        throw new HttpError(409, `Conflict: video already audited (current status: ${current.status})`);
+      }
+      throw new HttpError(409, 'Conflict: audit not applied');
+    }
 
     const action = pass ? AuditAction.REVIEW_PASS : AuditAction.REVIEW_REJECT;
     await AuditService.log(adminUserId, action, String(videoId), 'Video', reason);
-    
-    return items;
+
+    return await prisma.video.findUnique({
+      where: { id: videoId },
+      include: { uploader: { select: { realName: true } }, metrics: true },
+    });
+  }
+
+  /**
+   * Publish Video (Volunteer)
+   * PRD: audit pass does NOT auto-publish.
+   */
+  static async publishVideo(volunteerUserId: number, videoId: number) {
+    const result = await prisma.video.updateMany({
+      where: {
+        id: videoId,
+        uploaderId: volunteerUserId,
+        status: VideoStatus.APPROVED,
+      },
+      data: {
+        status: VideoStatus.PUBLISHED,
+        publishedBy: volunteerUserId,
+        publishedAt: new Date(),
+      },
+    });
+
+    if (result.count !== 1) {
+      const current = await prisma.video.findUnique({
+        where: { id: videoId },
+        select: { id: true, status: true, uploaderId: true },
+      });
+      if (!current) throw new HttpError(404, 'Video not found');
+      if (current.uploaderId !== volunteerUserId) throw new HttpError(403, 'Forbidden: not owner');
+      throw new HttpError(400, `Invalid status transition: ${current.status} -> PUBLISHED`);
+    }
+
+    await AuditService.log(volunteerUserId, AuditAction.PUBLISH, String(videoId), 'Video', 'Published');
+    return await prisma.video.findUnique({
+      where: { id: videoId },
+      include: { uploader: { select: { realName: true } }, metrics: true },
+    });
+  }
+
+  /**
+   * Offline Video (Volunteer self-offline OR Admin force-offline)
+   */
+  static async offlineVideo(params: {
+    operatorUserId: number;
+    operatorRole: UserRole;
+    operatorCollegeId?: number;
+    videoId: number;
+    reason?: string;
+  }) {
+    const { operatorUserId, operatorRole, operatorCollegeId, videoId, reason } = params;
+
+    const adminRoles: UserRole[] = [UserRole.COLLEGE_ADMIN, UserRole.PLATFORM_ADMIN];
+    if (adminRoles.includes(operatorRole)) {
+      if (!reason || !reason.trim()) {
+        throw new HttpError(400, 'Offline reason is required for admins');
+      }
+    }
+
+    // Build scope filter
+    const where: any = { id: videoId, status: VideoStatus.PUBLISHED };
+
+    if (operatorRole === UserRole.VOLUNTEER) {
+      where.uploaderId = operatorUserId;
+    } else if (operatorRole === UserRole.COLLEGE_ADMIN) {
+      if (!operatorCollegeId) throw new HttpError(400, 'Admin must belong to a college');
+      where.collegeId = operatorCollegeId;
+    } else if (operatorRole === UserRole.PLATFORM_ADMIN) {
+      // global scope
+    } else {
+      throw new HttpError(403, 'Forbidden');
+    }
+
+    const result = await prisma.video.updateMany({
+      where,
+      data: {
+        status: VideoStatus.OFFLINE,
+        offlineBy: operatorUserId,
+        offlineAt: new Date(),
+        offlineReason: reason ? reason.trim() : null,
+      },
+    });
+
+    if (result.count !== 1) {
+      const current = await prisma.video.findUnique({
+        where: { id: videoId },
+        select: { id: true, status: true, uploaderId: true, collegeId: true },
+      });
+      if (!current) throw new HttpError(404, 'Video not found');
+      if (current.status !== VideoStatus.PUBLISHED) {
+        throw new HttpError(409, `Conflict: only published videos can be offlined (current status: ${current.status})`);
+      }
+      throw new HttpError(403, 'Forbidden');
+    }
+
+    await AuditService.log(operatorUserId, AuditAction.OFFLINE, String(videoId), 'Video', reason);
+    return await prisma.video.findUnique({
+      where: { id: videoId },
+      include: { uploader: { select: { realName: true } }, metrics: true },
+    });
   }
 }

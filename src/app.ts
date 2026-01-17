@@ -10,6 +10,7 @@ import { errorHandler, notFoundHandler } from './middlewares/error.middleware';
 import { prisma } from './config/prisma';
 import redisClient from './config/redis';
 import { registerModules } from './modules/registerModules';
+import { registerSwagger } from './docs/swagger';
 
 // Initialize Express App
 const app = express();
@@ -88,6 +89,9 @@ app.get('/api', (req: Request, res: Response) => {
 
 // Routes
 registerModules(app);
+
+// Docs (Swagger UI + OpenAPI JSON)
+registerSwagger(app);
 
 
 // 404 + Error handler
