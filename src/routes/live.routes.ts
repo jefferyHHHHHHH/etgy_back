@@ -30,6 +30,7 @@ registerPath({
   method: 'post',
   path: '/api/live',
   summary: '创建直播草稿（志愿者）',
+  tags: ['Live'],
   security: [{ bearerAuth: [] }],
   request: {
     body: {
@@ -47,6 +48,7 @@ registerPath({
   method: 'post',
   path: '/api/live/{id}/submit',
   summary: '提交直播审核（志愿者）',
+  tags: ['Live'],
   security: [{ bearerAuth: [] }],
   request: { params: idParamSchema },
   responses: {
@@ -61,6 +63,7 @@ registerPath({
   method: 'post',
   path: '/api/live/{id}/audit',
   summary: '审核直播（学院管理员）',
+  tags: ['Live'],
   security: [{ bearerAuth: [] }],
   request: {
     params: idParamSchema,

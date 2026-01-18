@@ -37,6 +37,22 @@ export const registerPath = (config: RouteConfig) => {
 export const getOpenApiDocument = () => {
 	const generator = new OpenApiGeneratorV3(openApiRegistry.definitions);
 
+	const tags = [
+		{ name: 'Auth', description: 'Authentication & session' },
+		{ name: 'Users', description: 'User profile & admin user operations' },
+		{ name: 'Videos', description: 'Video content (list/detail/submit/audit/publish/offline)' },
+		{ name: 'Live', description: 'Live room (create/submit/audit)' },
+		{ name: 'Meta', description: 'Dictionaries & misc metadata' },
+	];
+
+	// Note: `x-tagGroups` is a common vendor extension supported by some tooling.
+	// Swagger UI will safely ignore unknown extensions.
+	const xTagGroups = [
+		{ name: 'Core', tags: ['Auth', 'Users'] },
+		{ name: 'Content', tags: ['Videos', 'Live'] },
+		{ name: 'Meta', tags: ['Meta'] },
+	];
+
 	return generator.generateDocument({
 		openapi: '3.0.3',
 		info: {
@@ -46,5 +62,7 @@ export const getOpenApiDocument = () => {
 				'API documentation generated from Zod schemas (auto sync with validation).',
 		},
 		servers: [{ url: '/' }],
+		tags,
+		...( { 'x-tagGroups': xTagGroups } as Record<string, unknown> ),
 	});
 };

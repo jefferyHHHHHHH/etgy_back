@@ -11,13 +11,13 @@ const router = Router();
 const loginBodySchema = z.object({
 	username: z.string().min(1),
 	password: z.string().min(1),
-	role: z.nativeEnum(UserRole).optional(),
+	role: z.nativeEnum(UserRole).optional().describe('登录角色（可选；不传则由后端按账号类型判定/默认）'),
 });
 
 const registerBodySchema = z.object({
 	username: z.string().min(3),
 	password: z.string().min(6),
-	role: z.nativeEnum(UserRole),
+	role: z.nativeEnum(UserRole).describe('注册角色（开发辅助）'),
 });
 
 // OpenAPI registration
@@ -25,6 +25,7 @@ registerPath({
 	method: 'post',
 	path: '/api/auth/login',
 	summary: '登录',
+	tags: ['Auth'],
 	request: {
 		body: {
 			content: {
@@ -48,6 +49,7 @@ registerPath({
 	method: 'post',
 	path: '/api/auth/register',
 	summary: '注册（开发辅助）',
+	tags: ['Auth'],
 	request: {
 		body: {
 			content: {
@@ -70,6 +72,7 @@ registerPath({
 	method: 'post',
 	path: '/api/auth/logout',
 	summary: '退出登录',
+	tags: ['Auth'],
 	security: [{ bearerAuth: [] }],
 	responses: {
 		200: { description: 'Logout success', content: { 'application/json': { schema: BaseResponseSchema } } },

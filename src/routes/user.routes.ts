@@ -35,6 +35,7 @@ registerPath({
 	method: 'get',
 	path: '/api/users/me',
 	summary: '获取我的用户信息',
+	tags: ['Users'],
 	security: [{ bearerAuth: [] }],
 	responses: {
 		200: { description: 'Success', content: { 'application/json': { schema: apiResponse(z.any()) } } },
@@ -46,6 +47,7 @@ registerPath({
 	method: 'post',
 	path: '/api/users/children',
 	summary: '创建儿童账号（管理员）',
+	tags: ['Users'],
 	security: [{ bearerAuth: [] }],
 	request: { body: { content: { 'application/json': { schema: createChildBodySchema } } } },
 	responses: {
@@ -60,6 +62,7 @@ registerPath({
 	method: 'get',
 	path: '/api/users/volunteers',
 	summary: '获取志愿者列表（管理员）',
+	tags: ['Users'],
 	security: [{ bearerAuth: [] }],
 	request: { query: listVolunteersQuerySchema },
 	responses: {
@@ -73,6 +76,7 @@ registerPath({
 	method: 'patch',
 	path: '/api/users/volunteers/{id}/status',
 	summary: '更新志愿者状态（管理员）',
+	tags: ['Users'],
 	security: [{ bearerAuth: [] }],
 	request: {
 		params: idParamSchema,

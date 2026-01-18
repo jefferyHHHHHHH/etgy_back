@@ -50,6 +50,7 @@ registerPath({
 	method: 'get',
 	path: '/api/videos',
 	summary: '获取视频列表（公开）',
+	tags: ['Videos'],
 	description: '游客/儿童仅可获取已发布(PUBLISHED)内容；search 或请求非 PUBLISHED 时需登录。',
 	request: {
 		query: listVideosQuerySchema,
@@ -72,6 +73,7 @@ registerPath({
 	method: 'get',
 	path: '/api/videos/{id}',
 	summary: '获取视频详情（公开）',
+	tags: ['Videos'],
 	request: { params: idParamSchema },
 	responses: {
 		200: { description: 'Success', content: { 'application/json': { schema: apiResponse(VideoSchema) } } },
@@ -83,6 +85,7 @@ registerPath({
 	method: 'post',
 	path: '/api/videos',
 	summary: '创建视频草稿（志愿者）',
+	tags: ['Videos'],
 	security: [{ bearerAuth: [] }],
 	request: {
 		body: {
@@ -101,6 +104,7 @@ registerPath({
 	method: 'post',
 	path: '/api/videos/{id}/submit',
 	summary: '提交视频审核（志愿者）',
+	tags: ['Videos'],
 	security: [{ bearerAuth: [] }],
 	request: { params: idParamSchema },
 	responses: {
@@ -114,6 +118,7 @@ registerPath({
 	method: 'post',
 	path: '/api/videos/{id}/audit',
 	summary: '审核视频（学院管理员）',
+	tags: ['Videos'],
 	security: [{ bearerAuth: [] }],
 	request: {
 		params: idParamSchema,
@@ -132,6 +137,7 @@ registerPath({
 	method: 'post',
 	path: '/api/videos/{id}/publish',
 	summary: '发布视频（志愿者）',
+	tags: ['Videos'],
 	security: [{ bearerAuth: [] }],
 	request: { params: idParamSchema },
 	responses: {
@@ -146,6 +152,7 @@ registerPath({
 	method: 'post',
 	path: '/api/videos/{id}/offline',
 	summary: '下架视频（志愿者/管理员）',
+	tags: ['Videos'],
 	security: [{ bearerAuth: [] }],
 	request: {
 		params: idParamSchema,

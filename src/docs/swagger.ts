@@ -10,6 +10,10 @@ export const registerSwagger = (app: Express) => {
 
 	app.get('/api/docs.json', (req: Request, res: Response) => {
 		res.setHeader('Content-Type', 'application/json');
+		// Avoid stale Swagger UI caused by aggressive caching (esp. during local dev).
+		res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+		res.setHeader('Pragma', 'no-cache');
+		res.setHeader('Expires', '0');
 		res.status(200).send(getOpenApiDocument());
 	});
 
