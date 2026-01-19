@@ -1,24 +1,117 @@
-import dotenv from 'dotenv';
-// import OSS from 'ali-oss'; // Example dependency if using Aliyun
-
-dotenv.config();
+import { S3Client, DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { env } from '../config/env';
+import { HttpError } from '../utils/httpError';
 
 class OssService {
-  constructor() {
-    // Initialize OSS client here
+  private client: S3Client | null = null;
+
+  private ensureConfigured() {
+    const missing: string[] = [];
+    if (!env.OSS_ACCESS_KEY_ID) missing.push('OSS_ACCESS_KEY_ID');
+    if (!env.OSS_ACCESS_KEY_SECRET) missing.push('OSS_ACCESS_KEY_SECRET');
+    if (!env.OSS_BUCKET) missing.push('OSS_BUCKET');
+    if (!env.OSS_REGION) missing.push('OSS_REGION');
+    if (!env.OSS_ENDPOINT) missing.push('OSS_ENDPOINT');
+
+    if (missing.length > 0) {
+      throw new HttpError(500, `OSS not configured: missing ${missing.join(', ')}`);
+    }
   }
 
-  async getUploadSignature() {
-    // Return STS or presigned URL
+  private getPresignExpiresSeconds(defaultValue = 15 * 60) {
+    const v = env.OSS_PRESIGN_EXPIRES_SECONDS;
+    if (!v) return defaultValue;
+    // Safety: keep it within 1min..24h
+    return Math.min(24 * 60 * 60, Math.max(60, v));
+  }
+
+  private normalizeKey(key: string) {
+    const k = String(key || '').trim();
+    if (!k) throw new HttpError(400, 'key is required');
+    return k.startsWith('/') ? k.slice(1) : k;
+  }
+
+  private isHttpUrl(value: string) {
+    return /^https?:\/\//i.test(value);
+  }
+
+  private getClient() {
+    if (this.client) return this.client;
+    this.ensureConfigured();
+
+    const bucket = env.OSS_BUCKET!;
+    const endpointUrl = new URL(env.OSS_ENDPOINT!);
+
+    // Qiniu may provide bucket endpoint like: https://etgy.s3.cn-south-1.qiniucs.com
+    // AWS SDK prefers endpoint without bucket; strip it if present.
+    let endpoint = endpointUrl;
+    let forcePathStyle = false;
+    if (endpointUrl.hostname.toLowerCase().startsWith(`${bucket.toLowerCase()}.`)) {
+      endpoint = new URL(endpointUrl.toString());
+      endpoint.hostname = endpointUrl.hostname.slice(bucket.length + 1);
+      forcePathStyle = false;
+    }
+
+    this.client = new S3Client({
+      region: env.OSS_REGION!,
+      endpoint: endpoint.toString(),
+      forcePathStyle,
+      credentials: {
+        accessKeyId: env.OSS_ACCESS_KEY_ID!,
+        secretAccessKey: env.OSS_ACCESS_KEY_SECRET!,
+      },
+    });
+
+    return this.client;
+  }
+
+  /**
+   * If caller passes a full URL, return it directly.
+   * If caller passes an object key, return a presigned GET URL.
+   */
+  async getPlayableUrl(params: { keyOrUrl: string; expiresInSeconds?: number }) {
+    const value = String(params.keyOrUrl || '').trim();
+    if (!value) throw new HttpError(400, 'keyOrUrl is required');
+    if (this.isHttpUrl(value)) return { url: value, expiresInSeconds: 0 };
+
+    const key = this.normalizeKey(value);
+    const expiresInSeconds = params.expiresInSeconds ?? this.getPresignExpiresSeconds();
+
+    const client = this.getClient();
+    const command = new GetObjectCommand({ Bucket: env.OSS_BUCKET!, Key: key });
+    const url = await getSignedUrl(client, command, { expiresIn: expiresInSeconds });
+    return { url, expiresInSeconds };
+  }
+
+  async presignPutObject(params: {
+    key: string;
+    contentType?: string;
+    expiresInSeconds?: number;
+  }) {
+    const key = this.normalizeKey(params.key);
+    const expiresInSeconds = params.expiresInSeconds ?? this.getPresignExpiresSeconds();
+
+    const client = this.getClient();
+    const command = new PutObjectCommand({
+      Bucket: env.OSS_BUCKET!,
+      Key: key,
+      ContentType: params.contentType,
+    });
+    const url = await getSignedUrl(client, command, { expiresIn: expiresInSeconds });
+
     return {
-      accessKeyId: process.env.OSS_ACCESS_KEY_ID,
-      policy: 'todo',
-      signature: 'todo'
+      method: 'PUT' as const,
+      url,
+      key,
+      expiresInSeconds,
     };
   }
 
-  async deleteFile(key: string) {
-    // Delete logic
+  async deleteObject(key: string) {
+    const k = this.normalizeKey(key);
+    const client = this.getClient();
+    await client.send(new DeleteObjectCommand({ Bucket: env.OSS_BUCKET!, Key: k }));
     return true;
   }
 }
