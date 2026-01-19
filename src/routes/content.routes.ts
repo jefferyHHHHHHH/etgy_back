@@ -90,6 +90,19 @@ registerPath({
 });
 
 registerPath({
+	method: 'get',
+	path: '/api/videos/{id}/media-urls',
+	summary: '获取视频/封面临时访问 URL（私有桶预签名）',
+	tags: ['Videos'],
+	description: '返回视频与封面图的 presigned GET URL。游客仅能获取已发布(PUBLISHED)视频。',
+	request: { params: idParamSchema },
+	responses: {
+		200: { description: 'Success', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
 	method: 'post',
 	path: '/api/videos',
 	summary: '创建视频草稿（志愿者）',
@@ -237,6 +250,19 @@ router.get(
 		return next();
 	},
 	ContentController.getVideo
+);
+
+// Public media urls (optional auth)
+router.get(
+	'/:id/media-urls',
+	validateParams(idParamSchema),
+	(req, res, next) => {
+		const authHeader = req.headers.authorization;
+		const hasBearer = typeof authHeader === 'string' && authHeader.startsWith('Bearer ');
+		if (hasBearer) return authMiddleware(req, res, next);
+		return next();
+	},
+	ContentController.getVideoMediaUrls
 );
 
 // Protected Routes (All other video operations require login)

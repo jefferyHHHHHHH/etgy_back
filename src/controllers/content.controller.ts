@@ -3,6 +3,7 @@ import { ContentService } from '../services/content.service';
 import { UserService } from '../services/user.service';
 import { VideoStatus, UserRole } from '../types/enums';
 import { HttpError } from '../utils/httpError';
+import OssService from '../services/oss.service';
 
 export class ContentController {
   
@@ -200,6 +201,52 @@ export class ContentController {
         return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
       }
       res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
+  /**
+   * GET /api/videos/:id/media-urls
+   * Returns presigned GET URLs for private OSS objects.
+   * Guests can only access published videos (enforced by service).
+   */
+  static async getVideoMediaUrls(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const user = req.user;
+
+      let viewerCollegeId: number | undefined;
+      if (user) {
+        const profile = await UserService.getUserProfile(user.userId);
+        viewerCollegeId = profile?.adminProfile?.collegeId ?? profile?.volunteerProfile?.collegeId ?? undefined;
+      }
+
+      const video = await ContentService.getVideoById({
+        videoId: Number(id),
+        viewerRole: user?.role as UserRole | undefined,
+        viewerUserId: user?.userId,
+        viewerCollegeId,
+      });
+
+      const [videoUrl, coverUrl] = await Promise.all([
+        OssService.getPlayableUrl({ keyOrUrl: video.url }),
+        video.coverUrl ? OssService.getPlayableUrl({ keyOrUrl: video.coverUrl }) : Promise.resolve(null),
+      ]);
+
+      return res.json({
+        code: 200,
+        message: 'Success',
+        data: {
+          videoId: video.id,
+          url: videoUrl.url,
+          expiresInSeconds: videoUrl.expiresInSeconds,
+          coverUrl: coverUrl ? coverUrl.url : null,
+        },
+      });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
     }
   }
 

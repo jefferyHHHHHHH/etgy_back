@@ -2,9 +2,61 @@ import { S3Client, DeleteObjectCommand, GetObjectCommand, PutObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from '../config/env';
 import { HttpError } from '../utils/httpError';
+import { randomUUID } from 'crypto';
+import fs from 'fs';
+import path from 'path';
 
 class OssService {
   private client: S3Client | null = null;
+
+  private sanitizeSegment(value: string) {
+    const v = String(value || '').trim().toLowerCase();
+    if (!v) return '';
+    // Keep simple & safe for S3 keys
+    return v.replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  private guessExt(params: { originalName?: string; contentType?: string }) {
+    const fromName = params.originalName ? path.extname(params.originalName).toLowerCase() : '';
+    if (fromName && fromName.length <= 10) return fromName;
+
+    const ct = (params.contentType || '').toLowerCase();
+    const map: Record<string, string> = {
+      'image/jpeg': '.jpg',
+      'image/png': '.png',
+      'image/webp': '.webp',
+      'image/gif': '.gif',
+      'video/mp4': '.mp4',
+      'video/quicktime': '.mov',
+      'video/webm': '.webm',
+    };
+    return map[ct] || '';
+  }
+
+  /**
+   * Key naming convention (recommended):
+   * - images/YYYY/MM/DD/<purpose?>/<timestamp>-<uuid><ext>
+   * - videos/YYYY/MM/DD/<timestamp>-<uuid><ext>
+   */
+  generateKey(params: {
+    folder: 'images' | 'videos';
+    purpose?: string;
+    originalName?: string;
+    contentType?: string;
+  }) {
+    const now = new Date();
+    const yyyy = String(now.getFullYear());
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const ext = this.guessExt({ originalName: params.originalName, contentType: params.contentType });
+    const base = `${Date.now()}-${randomUUID()}${ext}`;
+
+    const safePurpose = this.sanitizeSegment(params.purpose || '');
+    const segments = [params.folder, yyyy, mm, dd];
+    if (params.folder === 'images' && safePurpose) segments.push(safePurpose);
+    segments.push(base);
+    return segments.join('/');
+  }
 
   private ensureConfigured() {
     const missing: string[] = [];
@@ -106,6 +158,27 @@ class OssService {
       key,
       expiresInSeconds,
     };
+  }
+
+  async putObjectFromFile(params: { key: string; filePath: string; contentType?: string }) {
+    const key = this.normalizeKey(params.key);
+    const client = this.getClient();
+
+    if (!fs.existsSync(params.filePath)) {
+      throw new HttpError(400, 'upload temp file not found');
+    }
+
+    const body = fs.createReadStream(params.filePath);
+    await client.send(
+      new PutObjectCommand({
+        Bucket: env.OSS_BUCKET!,
+        Key: key,
+        Body: body,
+        ContentType: params.contentType,
+      })
+    );
+
+    return { key };
   }
 
   async deleteObject(key: string) {
