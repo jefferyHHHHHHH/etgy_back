@@ -9,6 +9,7 @@ import { loggerMiddleware } from './middlewares/logger.middleware';
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware';
 import { prisma } from './config/prisma';
 import redisClient from './config/redis';
+import { env } from './config/env';
 import { registerModules } from './modules/registerModules';
 import { registerSwagger } from './docs/swagger';
 
@@ -18,7 +19,26 @@ const app = express();
 // Global Middlewares
 app.use(requestIdMiddleware);
 app.use(loggerMiddleware);
-app.use(helmet());
+const isProd = env.NODE_ENV === 'production';
+
+// In development, avoid 304 responses preserving previously cached security headers.
+// This is especially important for Swagger UI when testing via http://<lan-ip>.
+if (!isProd) {
+  app.set('etag', false);
+}
+
+app.use(
+  helmet({
+    // In LAN/dev (plain HTTP), Helmet's default CSP may include `upgrade-insecure-requests`,
+    // which forces browsers to request https://... resources and breaks Swagger UI.
+    contentSecurityPolicy: isProd ? undefined : false,
+    // These headers are useful on HTTPS origins, but noisy/problematic on http://<lan-ip>
+    crossOriginOpenerPolicy: isProd ? undefined : false,
+    originAgentCluster: isProd ? undefined : false,
+    // HSTS only makes sense on HTTPS; disable for dev to avoid confusion
+    hsts: isProd ? undefined : false,
+  })
+);
 app.use(cors({
   origin: '*', // Configure properly in production
   credentials: true

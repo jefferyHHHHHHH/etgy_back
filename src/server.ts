@@ -5,6 +5,7 @@ import { env } from './config/env';
 import { logger } from './config/logger';
 
 const PORT = env.PORT;
+const HOST = env.HOST;
 
 const startServer = async () => {
   try {
@@ -28,9 +29,13 @@ const startServer = async () => {
     }
 
     // 3. Start Express Server
-    const server = app.listen(PORT, () => {
-      logger.info({ port: PORT }, 'Server running');
-    });
+    const server = HOST
+      ? app.listen(PORT, HOST, () => {
+          logger.info({ host: HOST, port: PORT }, 'Server running');
+        })
+      : app.listen(PORT, () => {
+          logger.info({ port: PORT }, 'Server running');
+        });
 
     // Graceful Shutdown
     const shutdown = async () => {
