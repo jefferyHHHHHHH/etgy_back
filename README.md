@@ -101,6 +101,22 @@
   - `npm run db:seed`
 6. **启动开发服务**: `npm run dev`
 
+### 5.4 平台/管理员建档接口（PRD 对齐）
+
+- 平台管理员可通过 API 创建学院、创建学院管理员账号、批量建档儿童账号。
+- 学院管理员可创建志愿者账号（强制限定在本学院）。
+
+常用接口：
+- `POST /api/platform/colleges`（创建学院）
+- `PATCH /api/platform/colleges/:id`（更新学院）
+- `GET /api/platform/colleges`（学院列表）
+- `POST /api/platform/college-admins`（创建学院管理员账号）
+- `POST /api/users/children`、`POST /api/users/children/batch`（平台管理员建档儿童账号）
+- `POST /api/users/volunteers/accounts`（学院管理员/平台管理员创建志愿者账号）
+- `PATCH /api/users/me/password`（修改自己的密码）
+
+提示：Swagger UI 默认在 `http://<host>:<port>/api/docs/`。
+
 ### 5.2 常用脚本
 
 - **启动开发环境**: `npm run dev` (使用 `nodemon` 热重载)

@@ -18,6 +18,11 @@ export class AuthService {
       throw new Error('User not found');
     }
 
+    // Status checks
+    if (user.status === UserStatus.SUSPENDED) {
+      throw new Error('Account suspended');
+    }
+
     // 2. Optional strict check if role is provided by client
     if (role && user.role !== role) {
       throw new Error('Role mismatch');
@@ -27,6 +32,14 @@ export class AuthService {
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) {
       throw new Error('Invalid credentials');
+    }
+
+    // PRD: accounts may be pre-created; first successful login activates the account.
+    if (user.status === UserStatus.INACTIVE) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { status: UserStatus.ACTIVE },
+      });
     }
 
     // 4. Generate Token

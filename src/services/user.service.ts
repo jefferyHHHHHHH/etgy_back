@@ -1,6 +1,8 @@
 import { prisma } from '../config/prisma';
 // import { UserRole, VolunteerStatus, Gender } from '@prisma/client';
 import { UserRole, UserStatus, VolunteerStatus, Gender } from '../types/enums';
+import bcrypt from 'bcryptjs';
+import { HttpError } from '../utils/httpError';
 
 export class UserService {
   
@@ -31,18 +33,25 @@ export class UserService {
    */
   static async createChild(data: {
     username: string;
+    password: string;
     realName: string;
     school: string;
     grade: string;
     gender: Gender;
+    status?: UserStatus;
   }) {
-    // TODO: Hash password
+    const username = data.username.trim();
+    if (!username) throw new HttpError(400, 'username is required');
+    if (!data.password || data.password.length < 6) throw new HttpError(400, 'password must be at least 6 chars');
+
+    const passwordHash = await bcrypt.hash(data.password, 10);
+
     const user = await prisma.user.create({
       data: {
-        username: data.username,
-        passwordHash: 'default_password', 
+        username,
+        passwordHash,
         role: UserRole.CHILD,
-        status: UserStatus.ACTIVE,
+        status: data.status ?? UserStatus.INACTIVE,
         childProfile: {
           create: {
             realName: data.realName,
@@ -55,6 +64,128 @@ export class UserService {
       include: { childProfile: true }
     });
     return user;
+  }
+
+  /**
+   * Batch create children (platform admin provisioning).
+   * Returns per-row result to make imports easier.
+   */
+  static async createChildrenBatch(items: Array<{
+    username: string;
+    password: string;
+    realName: string;
+    school: string;
+    grade: string;
+    gender: Gender;
+    status?: UserStatus;
+  }>) {
+    const results: Array<
+      | { ok: true; username: string; userId: number }
+      | { ok: false; username: string; message: string }
+    > = [];
+
+    for (const item of items) {
+      const username = (item.username ?? '').trim();
+      if (!username) {
+        results.push({ ok: false, username: item.username, message: 'username is required' });
+        continue;
+      }
+      try {
+        const passwordHash = await bcrypt.hash(item.password, 10);
+        const created = await prisma.user.create({
+          data: {
+            username,
+            passwordHash,
+            role: UserRole.CHILD,
+            status: item.status ?? UserStatus.INACTIVE,
+            childProfile: {
+              create: {
+                realName: item.realName,
+                school: item.school,
+                grade: item.grade,
+                gender: item.gender,
+              },
+            },
+          },
+          select: { id: true, username: true },
+        });
+        results.push({ ok: true, username: created.username, userId: created.id });
+      } catch (e: any) {
+        results.push({ ok: false, username, message: e?.message || 'create failed' });
+      }
+    }
+
+    return {
+      total: items.length,
+      success: results.filter((r) => r.ok).length,
+      failed: results.filter((r) => !r.ok).length,
+      results,
+    };
+  }
+
+  /**
+   * Create volunteer base account + profile (admin provisioning).
+   */
+  static async createVolunteerAccount(params: {
+    username: string;
+    password: string;
+    realName: string;
+    studentId: string;
+    collegeId: number;
+    phone?: string;
+    status?: UserStatus;
+  }) {
+    const username = params.username.trim();
+    if (!username) throw new HttpError(400, 'username is required');
+    if (!params.password || params.password.length < 6) throw new HttpError(400, 'password must be at least 6 chars');
+    if (!params.realName?.trim()) throw new HttpError(400, 'realName is required');
+    if (!params.studentId?.trim()) throw new HttpError(400, 'studentId is required');
+
+    const college = await prisma.college.findUnique({ where: { id: params.collegeId } });
+    if (!college) throw new HttpError(400, 'Invalid collegeId');
+
+    const existing = await prisma.user.findUnique({ where: { username } });
+    if (existing) throw new HttpError(409, 'Username already exists');
+
+    const passwordHash = await bcrypt.hash(params.password, 10);
+    return prisma.user.create({
+      data: {
+        username,
+        passwordHash,
+        role: UserRole.VOLUNTEER,
+        status: params.status ?? UserStatus.ACTIVE,
+        volunteerProfile: {
+          create: {
+            realName: params.realName.trim(),
+            studentId: params.studentId.trim(),
+            collegeId: params.collegeId,
+            phone: params.phone,
+            status: VolunteerStatus.IN_SCHOOL,
+          },
+        },
+      },
+      include: {
+        volunteerProfile: { include: { college: true } },
+      },
+    });
+  }
+
+  static async changePassword(userId: number, oldPassword: string, newPassword: string) {
+    if (!newPassword || newPassword.length < 6) throw new HttpError(400, 'newPassword must be at least 6 chars');
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new HttpError(404, 'User not found');
+
+    const ok = await bcrypt.compare(oldPassword, user.passwordHash);
+    if (!ok) throw new HttpError(400, 'Old password incorrect');
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+
+    return { userId, changed: true };
   }
 
   /**
