@@ -97,7 +97,8 @@ export const dictionaries = {
 	liveStatus: buildEnumDictionary(LiveStatus, {
 		[LiveStatus.DRAFT]: '草稿',
 		[LiveStatus.REVIEW]: '待审核',
-		[LiveStatus.PASSED]: '审核已通过（待开播）',
+		[LiveStatus.PASSED]: '审核已通过（待上架）',
+		[LiveStatus.PUBLISHED]: '已上架（待开播）',
 		[LiveStatus.REJECTED]: '已驳回',
 		[LiveStatus.LIVING]: '直播中',
 		[LiveStatus.FINISHED]: '已结束',
@@ -105,7 +106,8 @@ export const dictionaries = {
 	}, {
 		[LiveStatus.DRAFT]: '志愿者填写但尚未提交的申请草稿',
 		[LiveStatus.REVIEW]: '直播申请单待审核',
-		[LiveStatus.PASSED]: '审核通过，等待到时间开播',
+		[LiveStatus.PASSED]: '审核通过，但尚未上架（仍不可在前台看到）',
+		[LiveStatus.PUBLISHED]: '已上架，对前台可见（未到时间则待开播）',
 		[LiveStatus.REJECTED]: '申请被驳回（需提供原因）',
 		[LiveStatus.LIVING]: '直播正在进行中',
 		[LiveStatus.FINISHED]: '直播自然结束',

@@ -59,6 +59,16 @@ export const LiveRoomSchema = z
 		status: z.nativeEnum(LiveStatus),
 		rejectReason: z.string().nullable().optional(),
 
+		reviewedBy: z.number().int().nullable().optional(),
+		reviewedAt: z.string().datetime().nullable().optional(),
+
+		publishedBy: z.number().int().nullable().optional(),
+		publishedAt: z.string().datetime().nullable().optional(),
+
+		offlineBy: z.number().int().nullable().optional(),
+		offlineAt: z.string().datetime().nullable().optional(),
+		offlineReason: z.string().nullable().optional(),
+
 		pushUrl: z.string().nullable().optional(),
 		pullUrl: z.string().nullable().optional(),
 
@@ -66,5 +76,8 @@ export const LiveRoomSchema = z
 		collegeId: z.number().int(),
 		anchor: z.any().optional(),
 		college: z.any().optional(),
+
+		createdAt: z.string().datetime().optional(),
+		updatedAt: z.string().datetime().optional(),
 	})
 	.openapi('LiveRoom');

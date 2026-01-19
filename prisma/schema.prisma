@@ -165,7 +165,8 @@ model VideoMetrics {
 enum LiveStatus {
   DRAFT
   REVIEW
-  PASSED    // Approved, waiting for start
+  PASSED    // Approved, waiting for publish
+  PUBLISHED // Visible to children, waiting for start
   REJECTED
   LIVING    // In progress
   FINISHED  // Ended
@@ -184,6 +185,16 @@ model LiveRoom {
   
   status        LiveStatus @default(DRAFT)
   rejectReason  String?
+
+  reviewedBy    Int?
+  reviewedAt    DateTime?
+
+  publishedBy   Int?
+  publishedAt   DateTime?
+
+  offlineBy     Int?
+  offlineAt     DateTime?
+  offlineReason String?
   
   pushUrl       String?  @db.Text // Private for anchor
   pullUrl       String?  @db.Text // Public for audience
@@ -192,6 +203,9 @@ model LiveRoom {
   anchor        VolunteerProfile @relation(fields: [anchorId], references: [userId])
   collegeId     Int
   college       College          @relation(fields: [collegeId], references: [id])
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 // -----------------------------------------------------------------------------
