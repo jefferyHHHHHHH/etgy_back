@@ -297,6 +297,95 @@ export class ContentService {
   }
 
   /**
+   * Batch audit videos (College Admin only)
+   * - Strong-consistency: first update on REVIEW wins per video
+   * - Returns per-id result for admin UI
+   */
+  static async auditVideosBatch(params: {
+    adminUserId: number;
+    adminRole: UserRole;
+    adminCollegeId: number | undefined;
+    ids: number[];
+    pass: boolean;
+    reason?: string;
+  }) {
+    const { adminUserId, adminRole, adminCollegeId, ids, pass, reason } = params;
+
+    if (adminRole !== UserRole.COLLEGE_ADMIN) {
+      throw new HttpError(403, 'Forbidden: only college admin can audit videos');
+    }
+    if (!adminCollegeId) {
+      throw new HttpError(400, 'Admin must belong to a college');
+    }
+
+    const uniqueIds = Array.from(new Set((ids ?? []).map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0)));
+    if (uniqueIds.length === 0) throw new HttpError(400, 'ids is required');
+    if (!pass && (!reason || !reason.trim())) {
+      throw new HttpError(400, 'Reject reason is required');
+    }
+
+    const newStatus = pass ? VideoStatus.APPROVED : VideoStatus.REJECTED;
+    const results: Array<
+      | { id: number; ok: true; status: VideoStatus }
+      | { id: number; ok: false; status?: VideoStatus; message: string }
+    > = [];
+
+    for (const videoId of uniqueIds) {
+      const update = await prisma.video.updateMany({
+        where: {
+          id: videoId,
+          status: VideoStatus.REVIEW,
+          collegeId: adminCollegeId,
+        },
+        data: {
+          status: newStatus,
+          rejectReason: pass ? null : (reason || null),
+          reviewedBy: adminUserId,
+          reviewedAt: new Date(),
+        },
+      });
+
+      if (update.count === 1) {
+        const action = pass ? AuditAction.REVIEW_PASS : AuditAction.REVIEW_REJECT;
+        await AuditService.log(adminUserId, action, String(videoId), 'Video', reason);
+        results.push({ id: videoId, ok: true, status: newStatus });
+        continue;
+      }
+
+      const current = await prisma.video.findUnique({
+        where: { id: videoId },
+        select: { id: true, status: true, collegeId: true },
+      });
+
+      if (!current) {
+        results.push({ id: videoId, ok: false, message: 'Video not found' });
+        continue;
+      }
+      if (current.collegeId !== adminCollegeId) {
+        results.push({ id: videoId, ok: false, status: current.status, message: 'Forbidden: cross-college access' });
+        continue;
+      }
+      if (current.status !== VideoStatus.REVIEW) {
+        results.push({
+          id: videoId,
+          ok: false,
+          status: current.status,
+          message: `Conflict: video already audited (current status: ${current.status})`,
+        });
+        continue;
+      }
+      results.push({ id: videoId, ok: false, status: current.status, message: 'Conflict: audit not applied' });
+    }
+
+    return {
+      total: uniqueIds.length,
+      success: results.filter((r) => r.ok).length,
+      failed: results.filter((r) => !r.ok).length,
+      results,
+    };
+  }
+
+  /**
    * Publish Video (Volunteer)
    * PRD: audit pass does NOT auto-publish.
    */

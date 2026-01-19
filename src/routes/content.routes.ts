@@ -7,6 +7,8 @@ import { validateBody, validateParams, validateQuery } from '../middlewares/vali
 import { VideoStatus } from '../types/enums';
 import { apiResponse, BaseResponseSchema, ErrorResponseSchema, registerPath } from '../docs/openapi';
 import { VideoSchema } from '../docs/schemas';
+import { requireAnyPermissions, requirePermissions } from '../middlewares/permission.middleware';
+import { Permission } from '../types/permissions';
 
 const router = Router();
 
@@ -37,6 +39,12 @@ const listVideosQuerySchema = z.object({
 });
 
 const auditBodySchema = z.object({
+	pass: z.coerce.boolean(),
+	reason: z.string().optional(),
+});
+
+const auditBatchBodySchema = z.object({
+	ids: z.array(z.coerce.number().int().positive()).min(1),
 	pass: z.coerce.boolean(),
 	reason: z.string().optional(),
 });
@@ -134,6 +142,37 @@ registerPath({
 });
 
 registerPath({
+	method: 'get',
+	path: '/api/videos/admin',
+	summary: '管理端视频列表（学院/平台管理员）',
+	tags: ['Videos'],
+	security: [{ bearerAuth: [] }],
+	description: '管理端使用：默认返回待审核(REVIEW)视频，可按 status/collegeId/uploaderId/search 等筛选。平台管理员可跨学院查看；学院管理员仅能查看本学院。',
+	request: { query: listVideosQuerySchema },
+	responses: {
+		200: { description: 'Success', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/videos/audit/batch',
+	summary: '批量审核视频（学院管理员）',
+	tags: ['Videos'],
+	security: [{ bearerAuth: [] }],
+	request: { body: { content: { 'application/json': { schema: auditBatchBodySchema } } } },
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		409: { description: 'Conflict', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
 	method: 'post',
 	path: '/api/videos/{id}/publish',
 	summary: '发布视频（志愿者）',
@@ -203,6 +242,24 @@ router.get(
 // Protected Routes (All other video operations require login)
 router.use(authMiddleware);
 
+// Admin management routes
+router.get(
+	'/admin',
+	requireRole([UserRole.COLLEGE_ADMIN, UserRole.PLATFORM_ADMIN]),
+	// Platform admins can list to compare colleges / manage offlining; college admins list for reviews
+	requireAnyPermissions([Permission.VIDEO_REVIEW, Permission.VIDEO_OFFLINE]),
+	validateQuery(listVideosQuerySchema),
+	ContentController.listVideosAdmin
+);
+
+router.post(
+	'/audit/batch',
+	requireRole([UserRole.COLLEGE_ADMIN]),
+	requirePermissions([Permission.VIDEO_REVIEW]),
+	validateBody(auditBatchBodySchema),
+	ContentController.auditVideosBatch
+);
+
 // Volunteer operations
 // POST /api/videos - Upload
 router.post('/', requireRole([UserRole.VOLUNTEER]), validateBody(createVideoBodySchema), ContentController.createVideo);
@@ -220,6 +277,7 @@ router.post(
 router.post(
 	'/:id/audit',
 	requireRole([UserRole.COLLEGE_ADMIN]),
+	requirePermissions([Permission.VIDEO_REVIEW]),
 	validateParams(idParamSchema),
 	validateBody(auditBodySchema),
 	ContentController.auditVideo
@@ -239,6 +297,7 @@ router.post(
 router.post(
 	'/:id/offline',
 	requireRole([UserRole.VOLUNTEER, UserRole.COLLEGE_ADMIN, UserRole.PLATFORM_ADMIN]),
+	requirePermissions([Permission.VIDEO_OFFLINE]),
 	validateParams(idParamSchema),
 	validateBody(offlineBodySchema),
 	ContentController.offlineVideo

@@ -115,6 +115,10 @@
 - `POST /api/users/volunteers/accounts`（学院管理员/平台管理员创建志愿者账号）
 - `PATCH /api/users/me/password`（修改自己的密码）
 
+视频管理端接口（用于审核列表/筛选/批量操作）：
+- `GET /api/videos/admin`（管理端视频列表，默认 status=REVIEW，可筛选）
+- `POST /api/videos/audit/batch`（学院管理员批量审核，抢先制；返回逐条结果）
+
 提示：Swagger UI 默认在 `http://<host>:<port>/api/docs/`。
 
 ### 5.2 常用脚本
