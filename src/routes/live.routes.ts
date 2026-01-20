@@ -66,6 +66,15 @@ const messageSendBodySchema = z.object({
   content: z.string().min(1).max(500),
 });
 
+const agoraRtcTokenResponseSchema = z.object({
+  appId: z.string(),
+  channelName: z.string(),
+  uid: z.number().int(),
+  role: z.enum(['publisher', 'subscriber']),
+  token: z.string(),
+  expireAt: z.number().int(),
+});
+
 // OpenAPI registration
 registerPath({
   method: 'get',
@@ -286,6 +295,22 @@ registerPath({
   },
 });
 
+registerPath({
+  method: 'post',
+  path: '/api/live/{id}/agora/rtc-token',
+  summary: '获取 Agora RTC Token（登录用户）',
+  tags: ['Live'],
+  security: [{ bearerAuth: [] }],
+  request: { params: idParamSchema },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: apiResponse(agoraRtcTokenResponseSchema) } } },
+    400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
 // Public routes
 router.get('/', validateQuery(listPublicLivesQuerySchema), LiveController.listPublic);
 
@@ -362,6 +387,13 @@ router.get(
   '/:id/stream',
   validateParams(idParamSchema),
   LiveController.getStreamInfo
+);
+
+// Agora RTC token
+router.post(
+  '/:id/agora/rtc-token',
+  validateParams(idParamSchema),
+  LiveController.getAgoraRtcToken
 );
 
 // College admin (platform admin does NOT audit by PRD)

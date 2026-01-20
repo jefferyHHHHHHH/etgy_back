@@ -2,8 +2,96 @@ import { prisma } from '../config/prisma';
 import { AuditAction, LiveMessageType, LiveStatus, UserRole } from '../types/enums';
 import { AuditService } from './audit.service';
 import { HttpError } from '../utils/httpError';
+import { env } from '../config/env';
+import { RtcTokenBuilder, RtcRole } from 'agora-token';
 
 export class LiveService {
+  private static getAgoraConfig() {
+    const appId = (env.AGORA_APP_ID ?? '').trim();
+    const appCertificate = (env.AGORA_APP_CERTIFICATE ?? '').trim();
+    if (!appId || !appCertificate) {
+      throw new HttpError(400, 'Agora not configured: set AGORA_APP_ID and AGORA_APP_CERTIFICATE');
+    }
+    return {
+      appId,
+      appCertificate,
+      expireSeconds: env.AGORA_RTC_TOKEN_EXPIRE_SECONDS,
+    };
+  }
+
+  private static getLiveChannelName(liveId: number) {
+    // Stable, human-readable, avoids collisions across environments.
+    return `etgy_live_${liveId}`;
+  }
+
+  static async buildAgoraRtcToken(params: {
+    liveId: number;
+    requesterUserId: number;
+    requesterRole: UserRole;
+    requesterCollegeId?: number;
+  }) {
+    const { liveId, requesterUserId, requesterRole, requesterCollegeId } = params;
+
+    const live = await prisma.liveRoom.findUnique({
+      where: { id: liveId },
+      select: {
+        id: true,
+        status: true,
+        anchorId: true,
+        collegeId: true,
+      },
+    });
+    if (!live) throw new HttpError(404, 'Live not found');
+
+    // College admin limited to own college
+    if (requesterRole === UserRole.COLLEGE_ADMIN) {
+      if (!requesterCollegeId) throw new HttpError(400, 'Admin must belong to a college');
+      if (live.collegeId !== requesterCollegeId) throw new HttpError(404, 'Live not found');
+    }
+
+    const isAnchor = requesterRole === UserRole.VOLUNTEER && live.anchorId === requesterUserId;
+    const agoraRole = isAnchor ? RtcRole.PUBLISHER : RtcRole.SUBSCRIBER;
+
+    // Access rules
+    if (agoraRole === RtcRole.PUBLISHER) {
+      // Anchor can request token when published or living
+      const allowed: LiveStatus[] = [LiveStatus.PUBLISHED, LiveStatus.LIVING];
+      if (!allowed.includes(live.status as any)) {
+        throw new HttpError(400, `Live not ready for broadcasting (current: ${live.status})`);
+      }
+    } else {
+      // Audience token is only for visible lives
+      const visible: LiveStatus[] = [LiveStatus.PUBLISHED, LiveStatus.LIVING, LiveStatus.FINISHED];
+      if (!visible.includes(live.status as any)) {
+        throw new HttpError(404, 'Live not found');
+      }
+    }
+
+    const { appId, appCertificate, expireSeconds } = this.getAgoraConfig();
+    const channelName = this.getLiveChannelName(liveId);
+    const uid = requesterUserId;
+    const effectiveExpireSeconds = Math.max(60, expireSeconds || 3600);
+    const expireAt = Math.floor(Date.now() / 1000) + effectiveExpireSeconds;
+
+    const token = RtcTokenBuilder.buildTokenWithUid(
+      appId,
+      appCertificate,
+      channelName,
+      uid,
+      agoraRole,
+      effectiveExpireSeconds,
+      effectiveExpireSeconds
+    );
+
+    return {
+      appId,
+      channelName,
+      uid,
+      role: agoraRole === RtcRole.PUBLISHER ? 'publisher' : 'subscriber',
+      token,
+      expireAt,
+    };
+  }
   static async listPublicLives(params: {
     tab?: 'upcoming' | 'living' | 'ended';
     collegeId?: number;

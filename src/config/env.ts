@@ -33,6 +33,11 @@ const envSchema = z.object({
 
   // Docs
   SWAGGER_ENABLED: z.coerce.boolean().default(true),
+
+  // Agora RTC (optional; required only when using Agora token endpoints)
+  AGORA_APP_ID: z.string().optional(),
+  AGORA_APP_CERTIFICATE: z.string().optional(),
+  AGORA_RTC_TOKEN_EXPIRE_SECONDS: z.coerce.number().int().positive().default(3600),
 });
 
 export const env = envSchema.parse(process.env);

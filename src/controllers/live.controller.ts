@@ -305,4 +305,28 @@ export class LiveController {
       return res.status(400).json({ code: 400, message: error.message });
     }
   }
+
+  static async getAgoraRtcToken(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const { id } = req.params;
+
+      const profile = await UserService.getUserProfile(user.userId);
+      const requesterCollegeId = profile?.adminProfile?.collegeId ?? profile?.volunteerProfile?.collegeId ?? undefined;
+
+      const data = await LiveService.buildAgoraRtcToken({
+        liveId: Number(id),
+        requesterUserId: user.userId,
+        requesterRole: user.role as UserRole,
+        requesterCollegeId,
+      });
+
+      return res.json({ code: 200, message: 'Success', data });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
 }
