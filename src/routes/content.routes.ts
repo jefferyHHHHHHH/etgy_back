@@ -94,6 +94,13 @@ const listWatchLogsQuerySchema = z.object({
 	pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+const listWatchLogsResponseSchema = z.object({
+	page: z.number().int(),
+	pageSize: z.number().int(),
+	total: z.number().int(),
+	items: z.array(VideoWatchLogSchema),
+});
+
 // OpenAPI registration (single source of truth = Zod schemas)
 registerPath({
 	method: 'get',
@@ -299,7 +306,7 @@ registerPath({
 	security: [{ bearerAuth: [] }],
 	request: { query: listWatchLogsQuerySchema },
 	responses: {
-		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(listWatchLogsResponseSchema) } } },
 		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
 	},
 });
