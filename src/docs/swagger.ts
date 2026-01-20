@@ -14,7 +14,15 @@ export const registerSwagger = (app: Express) => {
 		res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
 		res.setHeader('Pragma', 'no-cache');
 		res.setHeader('Expires', '0');
-		res.status(200).send(getOpenApiDocument());
+
+		const forwardedProto = typeof req.headers['x-forwarded-proto'] === 'string'
+			? req.headers['x-forwarded-proto'].split(',')[0].trim()
+			: undefined;
+		const proto = forwardedProto || req.protocol;
+		const host = req.get('host');
+		const serverUrl = host ? `${proto}://${host}` : undefined;
+
+		res.status(200).send(getOpenApiDocument({ serverUrl }));
 	});
 
 	app.use(

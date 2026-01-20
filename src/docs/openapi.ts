@@ -34,7 +34,7 @@ export const registerPath = (config: RouteConfig) => {
 	openApiRegistry.registerPath(config);
 };
 
-export const getOpenApiDocument = () => {
+export const getOpenApiDocument = (options?: { serverUrl?: string }) => {
 	const generator = new OpenApiGeneratorV3(openApiRegistry.definitions);
 
 	const tags = [
@@ -63,7 +63,9 @@ export const getOpenApiDocument = () => {
 			description:
 				'API documentation generated from Zod schemas (auto sync with validation).',
 		},
-		servers: [{ url: '/' }],
+		// Use absolute http(s) url when possible to support Swagger UI opened from non-http origins
+		// (e.g. VS Code webview / file://), otherwise keep relative.
+		servers: [{ url: options?.serverUrl ?? '/' }],
 		tags,
 		...( { 'x-tagGroups': xTagGroups } as Record<string, unknown> ),
 	});
