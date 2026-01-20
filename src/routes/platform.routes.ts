@@ -6,7 +6,7 @@ import { requirePermissions } from '../middlewares/permission.middleware';
 import { Permission } from '../types/permissions';
 import { validateBody, validateParams } from '../middlewares/validate.middleware';
 import { apiResponse, ErrorResponseSchema, registerPath } from '../docs/openapi';
-import { AuditAction } from '../types/enums';
+import { AuditAction, UserStatus } from '../types/enums';
 
 const router = Router();
 
@@ -31,6 +31,15 @@ const createCollegeAdminBodySchema = z.object({
   password: z.string().min(6),
   realName: z.string().min(1),
   collegeId: z.coerce.number().int().positive(),
+});
+
+const updateCollegeAdminBodySchema = z.object({
+  realName: z.string().min(1).optional(),
+  collegeId: z.coerce.number().int().positive().optional(),
+});
+
+const updateCollegeAdminStatusBodySchema = z.object({
+  status: z.nativeEnum(UserStatus),
 });
 
 const listAuditLogsQuerySchema = z.object({
@@ -146,6 +155,44 @@ registerPath({
 });
 
 registerPath({
+  method: 'patch',
+  path: '/api/platform/college-admins/{id}',
+  summary: '编辑学院管理员账号（平台管理员）',
+  tags: ['Platform'],
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: idParamSchema,
+    body: { content: { 'application/json': { schema: updateCollegeAdminBodySchema } } },
+  },
+  responses: {
+    200: { description: 'Updated', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+    400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registerPath({
+  method: 'patch',
+  path: '/api/platform/college-admins/{id}/status',
+  summary: '停用/启用学院管理员账号（平台管理员）',
+  tags: ['Platform'],
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: idParamSchema,
+    body: { content: { 'application/json': { schema: updateCollegeAdminStatusBodySchema } } },
+  },
+  responses: {
+    200: { description: 'Updated', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+    400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registerPath({
   method: 'get',
   path: '/api/platform/audit-logs',
   summary: '审计日志查询（管理员）',
@@ -208,6 +255,22 @@ router.delete(
   requirePermissions([Permission.USER_COLLEGE_ADMIN_MANAGE]),
   validateParams(idParamSchema),
   PlatformController.deleteCollegeAdmin
+);
+
+router.patch(
+  '/college-admins/:id',
+  requirePermissions([Permission.USER_COLLEGE_ADMIN_MANAGE]),
+  validateParams(idParamSchema),
+  validateBody(updateCollegeAdminBodySchema),
+  PlatformController.updateCollegeAdmin
+);
+
+router.patch(
+  '/college-admins/:id/status',
+  requirePermissions([Permission.USER_COLLEGE_ADMIN_MANAGE]),
+  validateParams(idParamSchema),
+  validateBody(updateCollegeAdminStatusBodySchema),
+  PlatformController.updateCollegeAdminStatus
 );
 
 router.get(

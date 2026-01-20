@@ -18,6 +18,7 @@ export enum Permission {
   USER_CHILD_VIEW = 'user.child.view',
   USER_CHILD_MANAGE = 'user.child.manage',
   USER_VOLUNTEER_CREATE = 'user.volunteer.create',
+  USER_VOLUNTEER_MANAGE = 'user.volunteer.manage',
   USER_COLLEGE_ADMIN_CREATE = 'user.collegeAdmin.create',
   USER_COLLEGE_ADMIN_MANAGE = 'user.collegeAdmin.manage',
 
@@ -58,6 +59,7 @@ export const rolePermissions: Record<UserRole, Set<Permission>> = {
     Permission.DASHBOARD_VIEW,
     Permission.AUDIT_VIEW,
     Permission.USER_VOLUNTEER_CREATE,
+    Permission.USER_VOLUNTEER_MANAGE,
     Permission.VIDEO_REVIEW,
     Permission.VIDEO_OFFLINE,
     Permission.COMMENT_REVIEW,
@@ -75,6 +77,7 @@ export const rolePermissions: Record<UserRole, Set<Permission>> = {
     Permission.USER_COLLEGE_ADMIN_CREATE,
     Permission.USER_COLLEGE_ADMIN_MANAGE,
     Permission.USER_VOLUNTEER_CREATE,
+    Permission.USER_VOLUNTEER_MANAGE,
     Permission.VIDEO_OFFLINE,
     Permission.COMMENT_REVIEW,
     Permission.LIVE_OFFLINE,

@@ -5,6 +5,15 @@ import bcrypt from 'bcryptjs';
 import { HttpError } from '../utils/httpError';
 
 export class UserService {
+
+  private static generateTempPassword(len: number = 10) {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    let out = '';
+    for (let i = 0; i < len; i++) {
+      out += alphabet[Math.floor(Math.random() * alphabet.length)];
+    }
+    return out;
+  }
   
   /**
    * Get full user profile including role-specific details
@@ -286,13 +295,169 @@ export class UserService {
     });
   }
 
+  static async listVolunteersPaged(query: {
+    operatorRole: UserRole;
+    operatorUserId: number;
+    operatorCollegeId?: number;
+    collegeId?: number;
+    volunteerStatus?: VolunteerStatus;
+    userStatus?: UserStatus;
+    search?: string;
+    page: number;
+    pageSize: number;
+  }) {
+    const page = Math.max(query.page || 1, 1);
+    const pageSize = Math.min(Math.max(query.pageSize || 20, 1), 100);
+    const skip = (page - 1) * pageSize;
+
+    // Scope
+    let scopedCollegeId: number | undefined = query.collegeId;
+    if (query.operatorRole === UserRole.COLLEGE_ADMIN) {
+      if (!query.operatorCollegeId) throw new HttpError(400, 'Admin must belong to a college');
+      scopedCollegeId = query.operatorCollegeId;
+    }
+
+    const search = (query.search ?? '').trim();
+    const where: any = {
+      ...(scopedCollegeId ? { collegeId: scopedCollegeId } : {}),
+      ...(query.volunteerStatus ? { status: query.volunteerStatus } : {}),
+      ...(query.userStatus ? { user: { is: { status: query.userStatus } } } : {}),
+    };
+
+    if (search) {
+      where.OR = [
+        { realName: { contains: search } },
+        { studentId: { contains: search } },
+        { user: { is: { username: { contains: search } } } },
+      ];
+    }
+
+    const [total, items] = await Promise.all([
+      prisma.volunteerProfile.count({ where }),
+      prisma.volunteerProfile.findMany({
+        where,
+        orderBy: [{ userId: 'desc' }],
+        skip,
+        take: pageSize,
+        include: {
+          user: { select: { id: true, username: true, status: true, role: true, createdAt: true } },
+          college: true,
+        },
+      }),
+    ]);
+
+    return { page, pageSize, total, items };
+  }
+
+  static async setVolunteerSuspended(params: {
+    operatorRole: UserRole;
+    operatorUserId: number;
+    operatorCollegeId?: number;
+    volunteerUserId: number;
+    suspended: boolean;
+  }) {
+    const { operatorRole, operatorCollegeId, volunteerUserId, suspended } = params;
+
+    if (operatorRole !== UserRole.COLLEGE_ADMIN && operatorRole !== UserRole.PLATFORM_ADMIN) {
+      throw new HttpError(403, 'Forbidden');
+    }
+
+    const profile = await prisma.volunteerProfile.findUnique({
+      where: { userId: volunteerUserId },
+      include: { user: true },
+    });
+    if (!profile) throw new HttpError(404, 'Volunteer not found');
+
+    if (operatorRole === UserRole.COLLEGE_ADMIN) {
+      if (!operatorCollegeId) throw new HttpError(400, 'Admin must belong to a college');
+      if (profile.collegeId !== operatorCollegeId) throw new HttpError(403, 'Forbidden: cross-college access');
+    }
+
+    // Keep child/other roles safe
+    if (profile.user.role !== UserRole.VOLUNTEER) throw new HttpError(400, 'Target user is not a volunteer');
+
+    const nextUserStatus = suspended ? UserStatus.SUSPENDED : UserStatus.ACTIVE;
+    const nextVolunteerStatus = suspended ? VolunteerStatus.SUSPENDED : VolunteerStatus.IN_SCHOOL;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: volunteerUserId },
+        data: { status: nextUserStatus },
+      });
+      return tx.volunteerProfile.update({
+        where: { userId: volunteerUserId },
+        data: { status: nextVolunteerStatus },
+        include: { user: { select: { id: true, username: true, status: true, role: true } }, college: true },
+      });
+    });
+
+    return updated;
+  }
+
+  static async resetChildPassword(childUserId: number) {
+    const user = await prisma.user.findUnique({ where: { id: childUserId }, include: { childProfile: true } });
+    if (!user) throw new HttpError(404, 'User not found');
+    if (user.role !== UserRole.CHILD) throw new HttpError(400, 'Target user is not a child');
+
+    const tempPassword = this.generateTempPassword(10);
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+    await prisma.user.update({ where: { id: childUserId }, data: { passwordHash } });
+
+    return { userId: childUserId, tempPassword };
+  }
+
+  static async updateChildStatus(childUserId: number, status: UserStatus) {
+    const user = await prisma.user.findUnique({ where: { id: childUserId } });
+    if (!user) throw new HttpError(404, 'User not found');
+    if (user.role !== UserRole.CHILD) throw new HttpError(400, 'Target user is not a child');
+
+    const updated = await prisma.user.update({
+      where: { id: childUserId },
+      data: { status },
+      include: { childProfile: true },
+    });
+
+    return updated;
+  }
+
   /**
    * Update Volunteer Status (Approve/Suspend)
    */
-  static async updateVolunteerStatus(volunteerUserId: number, status: VolunteerStatus) {
-    return await prisma.volunteerProfile.update({
+  static async updateVolunteerStatus(params: {
+    operatorRole: UserRole;
+    operatorUserId: number;
+    operatorCollegeId?: number;
+    volunteerUserId: number;
+    status: VolunteerStatus;
+  }) {
+    const { operatorRole, operatorCollegeId, volunteerUserId, status } = params;
+
+    if (operatorRole !== UserRole.COLLEGE_ADMIN && operatorRole !== UserRole.PLATFORM_ADMIN) {
+      throw new HttpError(403, 'Forbidden');
+    }
+
+    const profile = await prisma.volunteerProfile.findUnique({
       where: { userId: volunteerUserId },
-      data: { status }
+      include: { user: true },
+    });
+    if (!profile) throw new HttpError(404, 'Volunteer not found');
+
+    if (operatorRole === UserRole.COLLEGE_ADMIN) {
+      if (!operatorCollegeId) throw new HttpError(400, 'Admin must belong to a college');
+      if (profile.collegeId !== operatorCollegeId) throw new HttpError(403, 'Forbidden: cross-college access');
+    }
+
+    if (profile.user.role !== UserRole.VOLUNTEER) throw new HttpError(400, 'Target user is not a volunteer');
+
+    const nextUserStatus = status === VolunteerStatus.SUSPENDED ? UserStatus.SUSPENDED : UserStatus.ACTIVE;
+
+    return prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id: volunteerUserId }, data: { status: nextUserStatus } });
+      return tx.volunteerProfile.update({
+        where: { userId: volunteerUserId },
+        data: { status },
+        include: { user: { select: { id: true, username: true, status: true, role: true } }, college: true },
+      });
     });
   }
 }

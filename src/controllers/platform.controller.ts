@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { PlatformService } from '../services/platform.service';
 import { HttpError } from '../utils/httpError';
+import { UserStatus } from '../types/enums';
 
 export class PlatformController {
   static async listColleges(req: Request, res: Response) {
@@ -75,6 +76,33 @@ export class PlatformController {
         return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
       }
       return res.status(400).json({ code: 400, message: error?.message || 'Delete college admin failed' });
+    }
+  }
+
+  static async updateCollegeAdmin(req: Request, res: Response) {
+    try {
+      const id = Number(req.params.id);
+      const updated = await PlatformService.updateCollegeAdminAccount(id, req.body);
+      return res.json({ code: 200, message: 'Updated', data: updated });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error?.message || 'Update college admin failed' });
+    }
+  }
+
+  static async updateCollegeAdminStatus(req: Request, res: Response) {
+    try {
+      const id = Number(req.params.id);
+      const { status } = req.body as { status: UserStatus };
+      const updated = await PlatformService.updateCollegeAdminStatus(id, req.user!.userId, status);
+      return res.json({ code: 200, message: 'Updated', data: updated });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error?.message || 'Update college admin status failed' });
     }
   }
 

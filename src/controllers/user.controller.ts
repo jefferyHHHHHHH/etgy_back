@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { UserService } from '../services/user.service';
 // import { UserRole, VolunteerStatus } from '@prisma/client';
-import { UserRole, VolunteerStatus } from '../types/enums';
+import { UserRole, UserStatus, VolunteerStatus } from '../types/enums';
 import { HttpError } from '../utils/httpError';
 
 export class UserController {
@@ -69,6 +69,39 @@ export class UserController {
     }
   }
 
+  /**
+   * POST /api/users/children/:id/reset-password (Platform Admin)
+   */
+  static async resetChildPassword(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const result = await UserService.resetChildPassword(Number(id));
+      return res.json({ code: 200, message: 'Password reset', data: result });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
+  /**
+   * PATCH /api/users/children/:id/status (Platform Admin)
+   */
+  static async updateChildStatus(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { status } = req.body as { status: UserStatus };
+      const updated = await UserService.updateChildStatus(Number(id), status);
+      return res.json({ code: 200, message: 'Updated', data: updated });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
   static async createVolunteerAccount(req: Request, res: Response) {
     try {
       const user = req.user!;
@@ -124,26 +157,64 @@ export class UserController {
    */
   static async listVolunteers(req: Request, res: Response) {
     try {
-      // If College Admin, force collegeId filter
       const user = req.user!;
-      let collegeId: number | undefined;
-
-      if (user.role === UserRole.COLLEGE_ADMIN) {
-        const profile = await UserService.getUserProfile(user.userId);
-        collegeId = profile?.adminProfile?.collegeId || undefined;
-      }
-      // If Platform Admin, optional query param
-      else if (user.role === UserRole.PLATFORM_ADMIN) {
-        collegeId = req.query.collegeId ? Number(req.query.collegeId) : undefined;
-      } else {
+      if (user.role !== UserRole.COLLEGE_ADMIN && user.role !== UserRole.PLATFORM_ADMIN) {
         return res.status(403).json({ code: 403, message: 'Forbidden' });
       }
 
-      const status = req.query.status as VolunteerStatus; // Cast to enum
-      const list = await UserService.listVolunteers(collegeId, status);
-      res.json({ code: 200, message: 'Success', data: list });
+      const profile = await UserService.getUserProfile(user.userId);
+      const operatorCollegeId = profile?.adminProfile?.collegeId ?? undefined;
+
+      const result = await UserService.listVolunteersPaged({
+        operatorRole: user.role as UserRole,
+        operatorUserId: user.userId,
+        operatorCollegeId,
+        collegeId: req.query.collegeId ? Number(req.query.collegeId) : undefined,
+        volunteerStatus: req.query.status as VolunteerStatus | undefined,
+        userStatus: req.query.userStatus as UserStatus | undefined,
+        search: req.query.search ? String(req.query.search) : undefined,
+        page: req.query.page ? Number(req.query.page) : 1,
+        pageSize: req.query.pageSize ? Number(req.query.pageSize) : 20,
+      });
+
+      res.setHeader('X-Total-Count', String(result.total));
+      res.setHeader('X-Page', String(result.page));
+      res.setHeader('X-Page-Size', String(result.pageSize));
+      return res.json({ code: 200, message: 'Success', data: result.items });
     } catch (error: any) {
-      res.status(500).json({ code: 500, message: error.message });
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(500).json({ code: 500, message: error.message });
+    }
+  }
+
+  /**
+   * PATCH /api/users/volunteers/:id/suspend
+   */
+  static async suspendVolunteer(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const { id } = req.params;
+      const { suspended } = req.body as { suspended: boolean };
+
+      const profile = await UserService.getUserProfile(user.userId);
+      const operatorCollegeId = profile?.adminProfile?.collegeId ?? undefined;
+
+      const updated = await UserService.setVolunteerSuspended({
+        operatorRole: user.role as UserRole,
+        operatorUserId: user.userId,
+        operatorCollegeId,
+        volunteerUserId: Number(id),
+        suspended: Boolean(suspended),
+      });
+
+      return res.json({ code: 200, message: 'Updated', data: updated });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
     }
   }
 
@@ -152,13 +223,27 @@ export class UserController {
    */
   static async updateVolunteerStatus(req: Request, res: Response) {
     try {
+      const user = req.user!;
       const { id } = req.params;
-      const { status } = req.body;
-      
-      const result = await UserService.updateVolunteerStatus(Number(id), status);
-      res.json({ code: 200, message: 'Status updated', data: result });
+      const { status } = req.body as { status: VolunteerStatus };
+
+      const profile = await UserService.getUserProfile(user.userId);
+      const operatorCollegeId = profile?.adminProfile?.collegeId ?? undefined;
+
+      const result = await UserService.updateVolunteerStatus({
+        operatorRole: user.role as UserRole,
+        operatorUserId: user.userId,
+        operatorCollegeId,
+        volunteerUserId: Number(id),
+        status,
+      });
+
+      return res.json({ code: 200, message: 'Status updated', data: result });
     } catch (error: any) {
-      res.status(400).json({ code: 400, message: error.message });
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
     }
   }
 }

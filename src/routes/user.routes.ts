@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { UserController } from '../controllers/user.controller';
 import { authMiddleware, requireRole } from '../middlewares/auth.middleware';
-import { UserRole } from '../types/enums';
+import { UserRole, UserStatus } from '../types/enums';
 import { validateBody, validateParams, validateQuery } from '../middlewares/validate.middleware';
 import { Gender, VolunteerStatus } from '../types/enums';
 import { apiResponse, ErrorResponseSchema, registerPath } from '../docs/openapi';
@@ -18,6 +18,10 @@ const idParamSchema = z.object({
 const listVolunteersQuerySchema = z.object({
 	collegeId: z.coerce.number().int().positive().optional(),
 	status: z.nativeEnum(VolunteerStatus).optional(),
+	userStatus: z.nativeEnum(UserStatus).optional(),
+	search: z.string().optional(),
+	page: z.coerce.number().int().min(1).default(1),
+	pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 
 const createChildBodySchema = z.object({
@@ -39,6 +43,14 @@ const listChildrenQuerySchema = z.object({
 	grade: z.string().optional(),
 	page: z.coerce.number().int().min(1).default(1),
 	pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+const updateUserStatusBodySchema = z.object({
+	status: z.nativeEnum(UserStatus),
+});
+
+const suspendBodySchema = z.object({
+	suspended: z.coerce.boolean(),
 });
 
 const createVolunteerAccountBodySchema = z.object({
@@ -118,6 +130,40 @@ registerPath({
 
 registerPath({
 	method: 'post',
+	path: '/api/users/children/{id}/reset-password',
+	summary: '重置儿童账号密码（平台管理员）',
+	tags: ['Users'],
+	security: [{ bearerAuth: [] }],
+	request: { params: idParamSchema },
+	responses: {
+		200: { description: 'Success', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'patch',
+	path: '/api/users/children/{id}/status',
+	summary: '更新儿童账号状态（平台管理员）',
+	tags: ['Users'],
+	security: [{ bearerAuth: [] }],
+	request: {
+		params: idParamSchema,
+		body: { content: { 'application/json': { schema: updateUserStatusBodySchema } } },
+	},
+	responses: {
+		200: { description: 'Success', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
 	path: '/api/users/volunteers/accounts',
 	summary: '创建志愿者账号（学院管理员/平台管理员）',
 	tags: ['Users'],
@@ -157,6 +203,25 @@ registerPath({
 		200: { description: 'Success', content: { 'application/json': { schema: apiResponse(z.any()) } } },
 		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
 		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'patch',
+	path: '/api/users/volunteers/{id}/suspend',
+	summary: '停用/启用志愿者账号（管理员）',
+	tags: ['Users'],
+	security: [{ bearerAuth: [] }],
+	request: {
+		params: idParamSchema,
+		body: { content: { 'application/json': { schema: suspendBodySchema } } },
+	},
+	responses: {
+		200: { description: 'Success', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
 	},
 });
 
@@ -213,6 +278,23 @@ router.get(
 );
 
 router.post(
+	'/children/:id/reset-password',
+	requireRole([UserRole.PLATFORM_ADMIN]),
+	requirePermissions([Permission.USER_CHILD_MANAGE]),
+	validateParams(idParamSchema),
+	UserController.resetChildPassword
+);
+
+router.patch(
+	'/children/:id/status',
+	requireRole([UserRole.PLATFORM_ADMIN]),
+	requirePermissions([Permission.USER_CHILD_MANAGE]),
+	validateParams(idParamSchema),
+	validateBody(updateUserStatusBodySchema),
+	UserController.updateChildStatus
+);
+
+router.post(
 	'/volunteers/accounts',
 	requireRole([UserRole.PLATFORM_ADMIN, UserRole.COLLEGE_ADMIN]),
 	requirePermissions([Permission.USER_VOLUNTEER_CREATE]),
@@ -223,13 +305,24 @@ router.post(
 router.get(
 	'/volunteers',
 	requireRole([UserRole.PLATFORM_ADMIN, UserRole.COLLEGE_ADMIN]),
+	requirePermissions([Permission.USER_VOLUNTEER_MANAGE]),
 	validateQuery(listVolunteersQuerySchema),
 	UserController.listVolunteers
 );
 
 router.patch(
+	'/volunteers/:id/suspend',
+	requireRole([UserRole.PLATFORM_ADMIN, UserRole.COLLEGE_ADMIN]),
+	requirePermissions([Permission.USER_VOLUNTEER_MANAGE]),
+	validateParams(idParamSchema),
+	validateBody(suspendBodySchema),
+	UserController.suspendVolunteer
+);
+
+router.patch(
 	'/volunteers/:id/status',
 	requireRole([UserRole.PLATFORM_ADMIN, UserRole.COLLEGE_ADMIN]),
+	requirePermissions([Permission.USER_VOLUNTEER_MANAGE]),
 	validateParams(idParamSchema),
 	validateBody(updateVolunteerStatusBodySchema),
 	UserController.updateVolunteerStatus

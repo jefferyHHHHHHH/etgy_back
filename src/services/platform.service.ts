@@ -121,6 +121,53 @@ export class PlatformService {
     return { id: collegeAdminUserId, deleted: true };
   }
 
+  static async updateCollegeAdminAccount(collegeAdminUserId: number, data: { realName?: string; collegeId?: number }) {
+    const user = await prisma.user.findUnique({ where: { id: collegeAdminUserId }, include: { adminProfile: true } });
+    if (!user) throw new HttpError(404, 'User not found');
+    if (user.role !== UserRole.COLLEGE_ADMIN) throw new HttpError(400, '目标用户不是学院管理员');
+
+    const updateUser: any = {};
+    const updateProfile: any = {};
+
+    if (typeof data.realName === 'string') updateProfile.realName = data.realName.trim();
+    if (typeof data.collegeId === 'number') {
+      const college = await prisma.college.findUnique({ where: { id: data.collegeId } });
+      if (!college) throw new HttpError(400, 'Invalid collegeId');
+      updateProfile.collegeId = data.collegeId;
+    }
+
+    if (!Object.keys(updateProfile).length && !Object.keys(updateUser).length) {
+      throw new HttpError(400, 'No fields to update');
+    }
+
+    return prisma.user.update({
+      where: { id: collegeAdminUserId },
+      data: {
+        ...updateUser,
+        adminProfile: {
+          update: updateProfile,
+        },
+      },
+      include: { adminProfile: { include: { college: true } } },
+    });
+  }
+
+  static async updateCollegeAdminStatus(collegeAdminUserId: number, operatorUserId: number, status: UserStatus) {
+    if (collegeAdminUserId === operatorUserId) {
+      throw new HttpError(400, '不能停用当前登录账号');
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: collegeAdminUserId } });
+    if (!user) throw new HttpError(404, 'User not found');
+    if (user.role !== UserRole.COLLEGE_ADMIN) throw new HttpError(400, '目标用户不是学院管理员');
+
+    return prisma.user.update({
+      where: { id: collegeAdminUserId },
+      data: { status },
+      include: { adminProfile: { include: { college: true } } },
+    });
+  }
+
   static async listAuditLogs(
     operatorUserId: number,
     operatorRole: UserRole,
