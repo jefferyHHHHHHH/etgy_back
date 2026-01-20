@@ -453,6 +453,25 @@ export class ContentController {
     }
   }
 
+  static async listMyWatchLogs(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const data = await ContentService.listMyWatchLogs({
+        userId: user.userId,
+        videoId: req.query.videoId ? Number(req.query.videoId) : undefined,
+        completed: typeof req.query.completed === 'string' ? req.query.completed === 'true' : undefined,
+        page: req.query.page ? Number(req.query.page) : 1,
+        pageSize: req.query.pageSize ? Number(req.query.pageSize) : 20,
+      });
+      return res.json({ code: 200, message: 'Success', data });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
   static async getMyVideoDashboard(req: Request, res: Response) {
     try {
       const user = req.user!;

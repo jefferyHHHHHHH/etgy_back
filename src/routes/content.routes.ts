@@ -87,6 +87,13 @@ const watchBodySchema = z.object({
 	completed: z.coerce.boolean().optional(),
 });
 
+const listWatchLogsQuerySchema = z.object({
+	videoId: z.coerce.number().int().positive().optional(),
+	completed: z.coerce.boolean().optional(),
+	page: z.coerce.number().int().min(1).default(1),
+	pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
 // OpenAPI registration (single source of truth = Zod schemas)
 registerPath({
 	method: 'get',
@@ -286,6 +293,19 @@ registerPath({
 
 registerPath({
 	method: 'get',
+	path: '/api/videos/watch-logs',
+	summary: '获取我的学习/播放记录（登录用户）',
+	tags: ['Videos'],
+	security: [{ bearerAuth: [] }],
+	request: { query: listWatchLogsQuerySchema },
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'get',
 	path: '/api/videos/mine/dashboard',
 	summary: '志愿者视频数据面板（我的）',
 	tags: ['Videos'],
@@ -457,6 +477,9 @@ router.get(
 
 // Protected Routes (All other video operations require login)
 router.use(authMiddleware);
+
+// Watch logs
+router.get('/watch-logs', validateQuery(listWatchLogsQuerySchema), ContentController.listMyWatchLogs);
 
 // Volunteer dashboard (must be before '/:id' mutations if any future pattern overlaps)
 router.get('/mine/dashboard', requireRole([UserRole.VOLUNTEER]), ContentController.getMyVideoDashboard);

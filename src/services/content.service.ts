@@ -764,6 +764,36 @@ export class ContentService {
     });
   }
 
+  static async listMyWatchLogs(params: {
+    userId: number;
+    page: number;
+    pageSize: number;
+    videoId?: number;
+    completed?: boolean;
+  }) {
+    const page = Math.max(params.page || 1, 1);
+    const pageSize = Math.min(Math.max(params.pageSize || 20, 1), 100);
+    const skip = (page - 1) * pageSize;
+
+    const where: any = {
+      userId: params.userId,
+      ...(typeof params.videoId === 'number' ? { videoId: params.videoId } : {}),
+      ...(typeof params.completed === 'boolean' ? { completed: params.completed } : {}),
+    };
+
+    const [total, items] = await Promise.all([
+      prisma.videoWatchLog.count({ where }),
+      prisma.videoWatchLog.findMany({
+        where,
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        skip,
+        take: pageSize,
+      }),
+    ]);
+
+    return { page, pageSize, total, items };
+  }
+
   static async getVolunteerVideoDashboard(volunteerUserId: number) {
     const videos = await prisma.video.findMany({
       where: { uploaderId: volunteerUserId },
