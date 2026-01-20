@@ -29,7 +29,17 @@ export const validateBody = <T>(schema: ZodType<T>) => {
 export const validateQuery = <T>(schema: ZodType<T>) => {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
-      req.query = schema.parse(req.query) as any;
+      const parsed = schema.parse(req.query) as any;
+
+      // Express v5 makes `req.query` a getter-only property. Direct assignment throws:
+      // "Cannot set property query of #<IncomingMessage> which has only a getter".
+      // Define an own property to shadow the getter, keeping existing controllers intact.
+      Object.defineProperty(req, 'query', {
+        value: parsed,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
       return next();
     } catch (err) {
       if (err instanceof ZodError) {
