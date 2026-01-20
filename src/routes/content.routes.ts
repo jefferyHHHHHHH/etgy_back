@@ -439,6 +439,19 @@ router.get(
 	ContentController.listVideos
 );
 
+// Protected single-segment routes MUST be registered before '/:id'
+router.get('/watch-logs', authMiddleware, validateQuery(listWatchLogsQuerySchema), ContentController.listMyWatchLogs);
+
+router.get(
+	'/admin',
+	authMiddleware,
+	requireRole([UserRole.COLLEGE_ADMIN, UserRole.PLATFORM_ADMIN]),
+	// Platform admins can list to compare colleges / manage offlining; college admins list for reviews
+	requireAnyPermissions([Permission.VIDEO_REVIEW, Permission.VIDEO_OFFLINE]),
+	validateQuery(listVideosQuerySchema),
+	ContentController.listVideosAdmin
+);
+
 // Public video detail
 // - Guests can only view published videos
 // - Non-published access requires login and is scope-checked in service
@@ -485,21 +498,8 @@ router.get(
 // Protected Routes (All other video operations require login)
 router.use(authMiddleware);
 
-// Watch logs
-router.get('/watch-logs', validateQuery(listWatchLogsQuerySchema), ContentController.listMyWatchLogs);
-
 // Volunteer dashboard (must be before '/:id' mutations if any future pattern overlaps)
 router.get('/mine/dashboard', requireRole([UserRole.VOLUNTEER]), ContentController.getMyVideoDashboard);
-
-// Admin management routes
-router.get(
-	'/admin',
-	requireRole([UserRole.COLLEGE_ADMIN, UserRole.PLATFORM_ADMIN]),
-	// Platform admins can list to compare colleges / manage offlining; college admins list for reviews
-	requireAnyPermissions([Permission.VIDEO_REVIEW, Permission.VIDEO_OFFLINE]),
-	validateQuery(listVideosQuerySchema),
-	ContentController.listVideosAdmin
-);
 
 router.post(
 	'/audit/batch',
