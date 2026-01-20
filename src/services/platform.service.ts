@@ -1,9 +1,14 @@
 import { prisma } from '../config/prisma';
 import bcrypt from 'bcryptjs';
-import { UserRole, UserStatus } from '../types/enums';
+import { AuditAction, LiveStatus, UserRole, UserStatus, VideoStatus } from '../types/enums';
 import { HttpError } from '../utils/httpError';
 
 export class PlatformService {
+  private static async getCollegeIdForCollegeAdmin(userId: number) {
+    const profile = await prisma.adminProfile.findUnique({ where: { userId }, select: { collegeId: true } });
+    return profile?.collegeId ?? null;
+  }
+
   static async listColleges() {
     return prisma.college.findMany({
       orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
@@ -79,5 +84,202 @@ export class PlatformService {
         adminProfile: { include: { college: true } },
       },
     });
+  }
+
+  static async listCollegeAdminAccounts(collegeId?: number) {
+    return prisma.user.findMany({
+      where: {
+        role: UserRole.COLLEGE_ADMIN,
+        ...(collegeId
+          ? {
+              adminProfile: {
+                collegeId,
+              },
+            }
+          : {}),
+      },
+      orderBy: [{ id: 'desc' }],
+      include: {
+        adminProfile: { include: { college: true } },
+      },
+    });
+  }
+
+  static async deleteCollegeAdminAccount(collegeAdminUserId: number, operatorUserId: number) {
+    if (collegeAdminUserId === operatorUserId) {
+      throw new HttpError(400, '不能删除当前登录账号');
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: collegeAdminUserId },
+      include: { adminProfile: true },
+    });
+    if (!user) throw new HttpError(404, 'User not found');
+    if (user.role !== UserRole.COLLEGE_ADMIN) throw new HttpError(400, '目标用户不是学院管理员');
+
+    await prisma.user.delete({ where: { id: collegeAdminUserId } });
+    return { id: collegeAdminUserId, deleted: true };
+  }
+
+  static async listAuditLogs(
+    operatorUserId: number,
+    operatorRole: UserRole,
+    query: {
+      collegeId?: number;
+      action?: AuditAction;
+      operatorId?: number;
+      targetType?: string;
+      targetId?: string;
+      startTime?: string;
+      endTime?: string;
+      page: number;
+      pageSize: number;
+    }
+  ) {
+    let scopedCollegeId: number | undefined = query.collegeId;
+    if (operatorRole === UserRole.COLLEGE_ADMIN) {
+      const cid = await this.getCollegeIdForCollegeAdmin(operatorUserId);
+      if (!cid) throw new HttpError(400, '学院管理员账号未绑定学院');
+      scopedCollegeId = cid;
+    }
+
+    const where: any = {};
+    if (query.action) where.action = query.action;
+    if (query.operatorId) where.operatorId = query.operatorId;
+    if (query.targetType) where.targetType = query.targetType;
+    if (query.targetId) where.targetId = String(query.targetId);
+
+    if (query.startTime || query.endTime) {
+      where.createdAt = {};
+      if (query.startTime) where.createdAt.gte = new Date(query.startTime);
+      if (query.endTime) where.createdAt.lte = new Date(query.endTime);
+    }
+
+    // 学院范围：通过“操作人所属学院”来做隔离（覆盖视频/直播审核、发布、下线、志愿者/管理员操作等大部分关键行为）
+    if (scopedCollegeId) {
+      where.operator = {
+        OR: [
+          { volunteerProfile: { collegeId: scopedCollegeId } },
+          { adminProfile: { collegeId: scopedCollegeId } },
+        ],
+      };
+    }
+
+    const page = Math.max(query.page || 1, 1);
+    const pageSize = Math.min(Math.max(query.pageSize || 20, 1), 100);
+    const skip = (page - 1) * pageSize;
+
+    const [total, items] = await Promise.all([
+      prisma.auditLog.count({ where }),
+      prisma.auditLog.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip,
+        take: pageSize,
+        include: {
+          operator: {
+            select: {
+              id: true,
+              username: true,
+              role: true,
+              adminProfile: { include: { college: true } },
+              volunteerProfile: { include: { college: true } },
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      page,
+      pageSize,
+      total,
+      items,
+    };
+  }
+
+  static async getDashboardStats(operatorUserId: number, operatorRole: UserRole, collegeId?: number) {
+    let scopedCollegeId: number | undefined = collegeId;
+    if (operatorRole === UserRole.COLLEGE_ADMIN) {
+      const cid = await this.getCollegeIdForCollegeAdmin(operatorUserId);
+      if (!cid) throw new HttpError(400, '学院管理员账号未绑定学院');
+      scopedCollegeId = cid;
+    }
+
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const videoWhere: any = scopedCollegeId ? { collegeId: scopedCollegeId } : {};
+    const liveWhere: any = scopedCollegeId ? { collegeId: scopedCollegeId } : {};
+
+    const [
+      videoTotal,
+      liveTotal,
+      videoByStatus,
+      liveByStatus,
+      todayNewVideos,
+      todayNewLives,
+      volunteerCount,
+    ] = await Promise.all([
+      prisma.video.count({ where: videoWhere }),
+      prisma.liveRoom.count({ where: liveWhere }),
+      prisma.video.groupBy({ by: ['status'], where: videoWhere, _count: { _all: true } }),
+      prisma.liveRoom.groupBy({ by: ['status'], where: liveWhere, _count: { _all: true } }),
+      prisma.video.count({ where: { ...videoWhere, createdAt: { gte: startOfToday } } }),
+      prisma.liveRoom.count({ where: { ...liveWhere, createdAt: { gte: startOfToday } } }),
+      prisma.volunteerProfile.count({
+        where: {
+          ...(scopedCollegeId ? { collegeId: scopedCollegeId } : {}),
+          user: { status: UserStatus.ACTIVE },
+        },
+      }),
+    ]);
+
+    const toMap = <T extends { status: any; _count: { _all: number } }>(rows: T[]) => {
+      const map: Record<string, number> = {};
+      for (const r of rows) map[String(r.status)] = r._count._all;
+      return map;
+    };
+
+    const videoStatusCounts = toMap(videoByStatus as any);
+    const liveStatusCounts = toMap(liveByStatus as any);
+
+    // 常用关键指标（便于前端直接用）
+    const videoPendingReview = videoStatusCounts[VideoStatus.REVIEW] ?? 0;
+    const videoApproved = videoStatusCounts[VideoStatus.APPROVED] ?? 0;
+    const videoPublished = videoStatusCounts[VideoStatus.PUBLISHED] ?? 0;
+
+    const livePendingReview = liveStatusCounts[LiveStatus.REVIEW] ?? 0;
+    const livePassed = liveStatusCounts[LiveStatus.PASSED] ?? 0;
+    const livePublished = liveStatusCounts[LiveStatus.PUBLISHED] ?? 0;
+    const liveLiving = liveStatusCounts[LiveStatus.LIVING] ?? 0;
+
+    return {
+      scope: {
+        collegeId: scopedCollegeId ?? null,
+      },
+      totals: {
+        videoTotal,
+        liveTotal,
+        volunteerActiveCount: volunteerCount,
+      },
+      today: {
+        newVideos: todayNewVideos,
+        newLives: todayNewLives,
+      },
+      video: {
+        byStatus: videoStatusCounts,
+        pendingReview: videoPendingReview,
+        approved: videoApproved,
+        published: videoPublished,
+      },
+      live: {
+        byStatus: liveStatusCounts,
+        pendingReview: livePendingReview,
+        passed: livePassed,
+        published: livePublished,
+        living: liveLiving,
+      },
+    };
   }
 }

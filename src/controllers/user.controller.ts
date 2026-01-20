@@ -48,6 +48,27 @@ export class UserController {
     }
   }
 
+  /**
+   * GET /api/users/children (Platform Admin Only)
+   */
+  static async listChildren(req: Request, res: Response) {
+    try {
+      const data = await UserService.listChildren({
+        search: req.query.search ? String(req.query.search) : undefined,
+        school: req.query.school ? String(req.query.school) : undefined,
+        grade: req.query.grade ? String(req.query.grade) : undefined,
+        page: req.query.page ? Number(req.query.page) : 1,
+        pageSize: req.query.pageSize ? Number(req.query.pageSize) : 20,
+      });
+      return res.json({ code: 200, message: 'Success', data });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(500).json({ code: 500, message: error?.message || 'Internal Server Error' });
+    }
+  }
+
   static async createVolunteerAccount(req: Request, res: Response) {
     try {
       const user = req.user!;

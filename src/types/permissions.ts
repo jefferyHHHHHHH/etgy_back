@@ -9,10 +9,16 @@ export enum Permission {
   // Colleges / org
   COLLEGE_MANAGE = 'college.manage',
 
+  // Dashboard & audit
+  DASHBOARD_VIEW = 'dashboard.view',
+  AUDIT_VIEW = 'audit.view',
+
   // Users
   USER_CHILD_CREATE = 'user.child.create',
+  USER_CHILD_VIEW = 'user.child.view',
   USER_VOLUNTEER_CREATE = 'user.volunteer.create',
   USER_COLLEGE_ADMIN_CREATE = 'user.collegeAdmin.create',
+  USER_COLLEGE_ADMIN_MANAGE = 'user.collegeAdmin.manage',
 
   // Videos
   VIDEO_CREATE = 'video.create',
@@ -41,6 +47,8 @@ export const rolePermissions: Record<UserRole, Set<Permission>> = {
   ]),
 
   [UserRole.COLLEGE_ADMIN]: new Set<Permission>([
+    Permission.DASHBOARD_VIEW,
+    Permission.AUDIT_VIEW,
     Permission.USER_VOLUNTEER_CREATE,
     Permission.VIDEO_REVIEW,
     Permission.VIDEO_OFFLINE,
@@ -49,9 +57,13 @@ export const rolePermissions: Record<UserRole, Set<Permission>> = {
   ]),
 
   [UserRole.PLATFORM_ADMIN]: new Set<Permission>([
+    Permission.DASHBOARD_VIEW,
+    Permission.AUDIT_VIEW,
     Permission.COLLEGE_MANAGE,
     Permission.USER_CHILD_CREATE,
+    Permission.USER_CHILD_VIEW,
     Permission.USER_COLLEGE_ADMIN_CREATE,
+    Permission.USER_COLLEGE_ADMIN_MANAGE,
     Permission.USER_VOLUNTEER_CREATE,
     Permission.VIDEO_OFFLINE,
     Permission.LIVE_OFFLINE,

@@ -33,6 +33,14 @@ const createChildrenBatchBodySchema = z.object({
 	items: z.array(createChildBodySchema).min(1),
 });
 
+const listChildrenQuerySchema = z.object({
+	search: z.string().optional().describe('按用户名/姓名模糊搜索'),
+	school: z.string().optional(),
+	grade: z.string().optional(),
+	page: z.coerce.number().int().min(1).default(1),
+	pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
 const createVolunteerAccountBodySchema = z.object({
 	username: z.string().min(3),
 	password: z.string().min(6),
@@ -89,6 +97,20 @@ registerPath({
 	responses: {
 		201: { description: 'Created', content: { 'application/json': { schema: apiResponse(z.any()) } } },
 		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'get',
+	path: '/api/users/children',
+	summary: '获取儿童账号列表（平台管理员）',
+	tags: ['Users'],
+	security: [{ bearerAuth: [] }],
+	request: { query: listChildrenQuerySchema },
+	responses: {
+		200: { description: 'Success', content: { 'application/json': { schema: apiResponse(z.any()) } } },
 		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
 		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
 	},
@@ -180,6 +202,14 @@ router.post(
 	requirePermissions([Permission.USER_CHILD_CREATE]),
 	validateBody(createChildrenBatchBodySchema),
 	UserController.createChildrenBatch
+);
+
+router.get(
+	'/children',
+	requireRole([UserRole.PLATFORM_ADMIN]),
+	requirePermissions([Permission.USER_CHILD_VIEW]),
+	validateQuery(listChildrenQuerySchema),
+	UserController.listChildren
 );
 
 router.post(

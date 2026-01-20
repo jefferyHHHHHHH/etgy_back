@@ -123,6 +123,60 @@ export class UserService {
     };
   }
 
+  static async listChildren(query: {
+    search?: string;
+    school?: string;
+    grade?: string;
+    page: number;
+    pageSize: number;
+  }) {
+    const page = Math.max(query.page || 1, 1);
+    const pageSize = Math.min(Math.max(query.pageSize || 20, 1), 100);
+    const skip = (page - 1) * pageSize;
+
+    const search = (query.search ?? '').trim();
+    const school = (query.school ?? '').trim();
+    const grade = (query.grade ?? '').trim();
+
+    const where: any = {
+      role: UserRole.CHILD,
+      childProfile: {
+        isNot: null,
+      },
+    };
+
+    if (search) {
+      where.OR = [
+        { username: { contains: search } },
+        { childProfile: { realName: { contains: search } } },
+      ];
+    }
+    if (school) {
+      where.childProfile = { ...(where.childProfile ?? {}), school: { contains: school } };
+    }
+    if (grade) {
+      where.childProfile = { ...(where.childProfile ?? {}), grade: { contains: grade } };
+    }
+
+    const [total, items] = await Promise.all([
+      prisma.user.count({ where }),
+      prisma.user.findMany({
+        where,
+        orderBy: [{ id: 'desc' }],
+        skip,
+        take: pageSize,
+        include: { childProfile: true },
+      }),
+    ]);
+
+    return {
+      page,
+      pageSize,
+      total,
+      items,
+    };
+  }
+
   /**
    * Create volunteer base account + profile (admin provisioning).
    */
