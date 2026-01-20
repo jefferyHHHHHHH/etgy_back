@@ -16,16 +16,22 @@ export enum Permission {
   // Users
   USER_CHILD_CREATE = 'user.child.create',
   USER_CHILD_VIEW = 'user.child.view',
+  USER_CHILD_MANAGE = 'user.child.manage',
   USER_VOLUNTEER_CREATE = 'user.volunteer.create',
   USER_COLLEGE_ADMIN_CREATE = 'user.collegeAdmin.create',
   USER_COLLEGE_ADMIN_MANAGE = 'user.collegeAdmin.manage',
 
   // Videos
   VIDEO_CREATE = 'video.create',
+  VIDEO_EDIT = 'video.edit',
+  VIDEO_DELETE = 'video.delete',
   VIDEO_SUBMIT = 'video.submit',
   VIDEO_REVIEW = 'video.review',
   VIDEO_PUBLISH = 'video.publish',
   VIDEO_OFFLINE = 'video.offline',
+
+  // Comments (optional feature in PRD)
+  COMMENT_REVIEW = 'comment.review',
 
   // Live
   LIVE_CREATE = 'live.create',
@@ -39,6 +45,8 @@ export const rolePermissions: Record<UserRole, Set<Permission>> = {
 
   [UserRole.VOLUNTEER]: new Set<Permission>([
     Permission.VIDEO_CREATE,
+    Permission.VIDEO_EDIT,
+    Permission.VIDEO_DELETE,
     Permission.VIDEO_SUBMIT,
     Permission.VIDEO_PUBLISH,
     Permission.VIDEO_OFFLINE,
@@ -52,6 +60,7 @@ export const rolePermissions: Record<UserRole, Set<Permission>> = {
     Permission.USER_VOLUNTEER_CREATE,
     Permission.VIDEO_REVIEW,
     Permission.VIDEO_OFFLINE,
+    Permission.COMMENT_REVIEW,
     Permission.LIVE_REVIEW,
     Permission.LIVE_OFFLINE,
   ]),
@@ -62,10 +71,12 @@ export const rolePermissions: Record<UserRole, Set<Permission>> = {
     Permission.COLLEGE_MANAGE,
     Permission.USER_CHILD_CREATE,
     Permission.USER_CHILD_VIEW,
+    Permission.USER_CHILD_MANAGE,
     Permission.USER_COLLEGE_ADMIN_CREATE,
     Permission.USER_COLLEGE_ADMIN_MANAGE,
     Permission.USER_VOLUNTEER_CREATE,
     Permission.VIDEO_OFFLINE,
+    Permission.COMMENT_REVIEW,
     Permission.LIVE_OFFLINE,
   ]),
 };

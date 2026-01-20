@@ -40,6 +40,13 @@ model User {
   
   // Audit
   auditLogs        AuditLog[]        @relation("OperatorLogs")
+
+  // Interactions
+  videoLikes        VideoLike[]       @relation("UserVideoLikes")
+  videoFavorites    VideoFavorite[]   @relation("UserVideoFavorites")
+  videoComments     VideoComment[]    @relation("UserVideoComments")
+  videoWatchLogs    VideoWatchLog[]   @relation("UserVideoWatchLogs")
+  liveMessages      LiveMessage[]     @relation("UserLiveMessages")
 }
 
 enum Gender {
@@ -147,6 +154,15 @@ model Video {
 
   // 1:1 Relation for frequently updated stats to reduce lock contention on main table
   metrics      VideoMetrics?
+
+  // Interactions
+  likes        VideoLike[]       @relation("VideoLikes")
+  favorites    VideoFavorite[]   @relation("VideoFavorites")
+  comments     VideoComment[]    @relation("VideoComments")
+  watchLogs    VideoWatchLog[]   @relation("VideoWatchLogs")
+
+  // Replay source (one video can be bound as replay for multiple lives)
+  replayLives  LiveRoom[]        @relation("LiveReplayVideo")
 }
 
 model VideoMetrics {
@@ -156,6 +172,64 @@ model VideoMetrics {
   playCount Int   @default(0)
   likeCount Int   @default(0)
   favCount  Int   @default(0)
+}
+
+enum CommentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model VideoLike {
+  videoId   Int
+  userId    Int
+  video     Video @relation("VideoLikes", fields: [videoId], references: [id], onDelete: Cascade)
+  user      User  @relation("UserVideoLikes", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([videoId, userId])
+}
+
+model VideoFavorite {
+  videoId   Int
+  userId    Int
+  video     Video @relation("VideoFavorites", fields: [videoId], references: [id], onDelete: Cascade)
+  user      User  @relation("UserVideoFavorites", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([videoId, userId])
+}
+
+model VideoComment {
+  id          Int          @id @default(autoincrement())
+  videoId     Int
+  authorId    Int
+  content     String       @db.Text
+  status      CommentStatus @default(PENDING)
+  rejectReason String?
+  reviewedBy  Int?
+  reviewedAt  DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  video       Video @relation("VideoComments", fields: [videoId], references: [id], onDelete: Cascade)
+  author      User  @relation("UserVideoComments", fields: [authorId], references: [id], onDelete: Cascade)
+}
+
+model VideoWatchLog {
+  id              Int      @id @default(autoincrement())
+  videoId         Int
+  userId          Int
+  lastPositionSec Int      @default(0)
+  watchedSeconds  Int      @default(0)
+  completed       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  video           Video @relation("VideoWatchLogs", fields: [videoId], references: [id], onDelete: Cascade)
+  user            User  @relation("UserVideoWatchLogs", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([videoId, userId])
 }
 
 // -----------------------------------------------------------------------------
@@ -198,6 +272,12 @@ model LiveRoom {
   
   pushUrl       String?  @db.Text // Private for anchor
   pullUrl       String?  @db.Text // Public for audience
+
+  // Replay binding (optional): after live ends, bind a recorded replay video
+  replayVideoId Int?
+  replayVideo   Video?   @relation("LiveReplayVideo", fields: [replayVideoId], references: [id])
+
+  messages      LiveMessage[] @relation("LiveRoomMessages")
   
   anchorId      Int
   anchor        VolunteerProfile @relation(fields: [anchorId], references: [userId])
@@ -206,6 +286,25 @@ model LiveRoom {
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+enum LiveMessageType {
+  CHAT
+  QA
+}
+
+model LiveMessage {
+  id        Int            @id @default(autoincrement())
+  liveId    Int
+  senderId  Int
+  type      LiveMessageType @default(CHAT)
+  content   String         @db.Text
+  createdAt DateTime       @default(now())
+
+  live      LiveRoom @relation("LiveRoomMessages", fields: [liveId], references: [id], onDelete: Cascade)
+  sender    User     @relation("UserLiveMessages", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([liveId, id])
 }
 
 // -----------------------------------------------------------------------------

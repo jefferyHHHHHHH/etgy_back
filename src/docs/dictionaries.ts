@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import {
 	AuditAction,
+	CommentStatus,
 	Gender,
+	LiveMessageType,
 	LiveStatus,
 	UserRole,
 	UserStatus,
@@ -123,6 +125,15 @@ export const dictionaries = {
 		[AuditAction.PUBLISH]: '上架/发布',
 		[AuditAction.OFFLINE]: '下线/下架/停止',
 	}),
+	commentStatus: buildEnumDictionary(CommentStatus, {
+		[CommentStatus.PENDING]: '待审核',
+		[CommentStatus.APPROVED]: '已通过',
+		[CommentStatus.REJECTED]: '已驳回',
+	}),
+	liveMessageType: buildEnumDictionary(LiveMessageType, {
+		[LiveMessageType.CHAT]: '聊天',
+		[LiveMessageType.QA]: '提问/Q&A',
+	}),
 } as const;
 
 export const DictionariesSchema = z
@@ -134,5 +145,7 @@ export const DictionariesSchema = z
 		videoStatus: z.array(DictionaryItemSchema),
 		liveStatus: z.array(DictionaryItemSchema),
 		auditAction: z.array(DictionaryItemSchema),
+		commentStatus: z.array(DictionaryItemSchema),
+		liveMessageType: z.array(DictionaryItemSchema),
 	})
 	.openapi('Dictionaries');

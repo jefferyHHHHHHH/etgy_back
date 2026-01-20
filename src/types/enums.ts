@@ -6,4 +6,6 @@ export {
   VideoStatus,
   LiveStatus,
   AuditAction,
+  CommentStatus,
+  LiveMessageType,
 } from '@prisma/client';

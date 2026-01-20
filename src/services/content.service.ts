@@ -1,5 +1,5 @@
 import { prisma } from '../config/prisma';
-import { VideoStatus, AuditAction, UserRole } from '../types/enums';
+import { AuditAction, CommentStatus, UserRole, VideoStatus } from '../types/enums';
 import { AuditService } from './audit.service';
 import { HttpError } from '../utils/httpError';
 
@@ -480,5 +480,331 @@ export class ContentService {
       where: { id: videoId },
       include: { uploader: { select: { realName: true } }, metrics: true },
     });
+  }
+
+  /**
+   * Update video metadata (volunteer only, draft/rejected)
+   */
+  static async updateVideo(volunteerUserId: number, videoId: number, data: {
+    title?: string;
+    url?: string;
+    intro?: string;
+    coverUrl?: string;
+    duration?: number;
+    gradeRange?: string;
+    subjectTag?: string;
+  }) {
+    const video = await prisma.video.findUnique({ where: { id: videoId } });
+    if (!video) throw new HttpError(404, 'Video not found');
+    if (video.uploaderId !== volunteerUserId) throw new HttpError(403, 'Forbidden: not owner');
+
+    const allowed: VideoStatus[] = [VideoStatus.DRAFT, VideoStatus.REJECTED];
+    if (!allowed.includes(video.status)) {
+      throw new HttpError(400, `Invalid status: only DRAFT/REJECTED can be edited (current: ${video.status})`);
+    }
+
+    const update: any = {};
+    if (typeof data.title === 'string') update.title = data.title;
+    if (typeof data.url === 'string') update.url = data.url;
+    if (typeof data.intro === 'string') update.intro = data.intro;
+    if (typeof data.coverUrl === 'string') update.coverUrl = data.coverUrl;
+    if (typeof data.duration === 'number') update.duration = data.duration;
+    if (typeof data.gradeRange === 'string') update.gradeRange = data.gradeRange;
+    if (typeof data.subjectTag === 'string') update.subjectTag = data.subjectTag;
+
+    const updated = await prisma.video.update({
+      where: { id: videoId },
+      data: update,
+      include: { uploader: { select: { realName: true } }, metrics: true },
+    });
+
+    await AuditService.log(volunteerUserId, AuditAction.UPDATE, String(videoId), 'Video', 'Updated video metadata');
+    return updated;
+  }
+
+  static async deleteVideo(volunteerUserId: number, videoId: number) {
+    const video = await prisma.video.findUnique({ where: { id: videoId }, select: { id: true, uploaderId: true, status: true, title: true } });
+    if (!video) throw new HttpError(404, 'Video not found');
+    if (video.uploaderId !== volunteerUserId) throw new HttpError(403, 'Forbidden: not owner');
+
+    const allowed: VideoStatus[] = [VideoStatus.DRAFT, VideoStatus.REJECTED];
+    if (!allowed.includes(video.status)) {
+      throw new HttpError(400, `Only DRAFT/REJECTED videos can be deleted (current: ${video.status})`);
+    }
+
+    await prisma.video.delete({ where: { id: videoId } });
+    await AuditService.log(volunteerUserId, AuditAction.DELETE, String(videoId), 'Video', `Deleted video ${video.title}`);
+    return { id: videoId, deleted: true };
+  }
+
+  static async toggleLike(userId: number, videoId: number) {
+    const video = await prisma.video.findUnique({ where: { id: videoId }, select: { id: true, status: true } });
+    if (!video || video.status !== VideoStatus.PUBLISHED) throw new HttpError(404, 'Video not found');
+
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.videoLike.findUnique({ where: { videoId_userId: { videoId, userId } } });
+      if (existing) {
+        await tx.videoLike.delete({ where: { videoId_userId: { videoId, userId } } });
+        await tx.videoMetrics.upsert({
+          where: { videoId },
+          update: { likeCount: { decrement: 1 } },
+          create: { videoId, playCount: 0, likeCount: 0, favCount: 0 },
+        });
+        return { liked: false };
+      }
+
+      await tx.videoLike.create({ data: { videoId, userId } });
+      await tx.videoMetrics.upsert({
+        where: { videoId },
+        update: { likeCount: { increment: 1 } },
+        create: { videoId, playCount: 0, likeCount: 1, favCount: 0 },
+      });
+      return { liked: true };
+    });
+  }
+
+  static async toggleFavorite(userId: number, videoId: number) {
+    const video = await prisma.video.findUnique({ where: { id: videoId }, select: { id: true, status: true } });
+    if (!video || video.status !== VideoStatus.PUBLISHED) throw new HttpError(404, 'Video not found');
+
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.videoFavorite.findUnique({ where: { videoId_userId: { videoId, userId } } });
+      if (existing) {
+        await tx.videoFavorite.delete({ where: { videoId_userId: { videoId, userId } } });
+        await tx.videoMetrics.upsert({
+          where: { videoId },
+          update: { favCount: { decrement: 1 } },
+          create: { videoId, playCount: 0, likeCount: 0, favCount: 0 },
+        });
+        return { favorited: false };
+      }
+
+      await tx.videoFavorite.create({ data: { videoId, userId } });
+      await tx.videoMetrics.upsert({
+        where: { videoId },
+        update: { favCount: { increment: 1 } },
+        create: { videoId, playCount: 0, likeCount: 0, favCount: 1 },
+      });
+      return { favorited: true };
+    });
+  }
+
+  static async createVideoComment(userId: number, videoId: number, content: string) {
+    const video = await prisma.video.findUnique({ where: { id: videoId }, select: { id: true, status: true } });
+    if (!video || video.status !== VideoStatus.PUBLISHED) throw new HttpError(404, 'Video not found');
+
+    const text = (content ?? '').trim();
+    if (!text) throw new HttpError(400, 'content is required');
+
+    const created = await prisma.videoComment.create({
+      data: {
+        videoId,
+        authorId: userId,
+        content: text,
+        status: CommentStatus.PENDING,
+      },
+      include: { author: { select: { id: true, username: true, role: true, childProfile: true } } },
+    });
+
+    await AuditService.log(userId, AuditAction.CREATE, String(created.id), 'VideoComment', 'Created comment');
+    return created;
+  }
+
+  static async listVideoComments(params: {
+    videoId: number;
+    viewerRole?: UserRole;
+    viewerUserId?: number;
+    viewerCollegeId?: number;
+    page: number;
+    pageSize: number;
+  }) {
+    const page = Math.max(params.page || 1, 1);
+    const pageSize = Math.min(Math.max(params.pageSize || 20, 1), 50);
+    const skip = (page - 1) * pageSize;
+
+    const video = await prisma.video.findUnique({
+      where: { id: params.videoId },
+      select: { id: true, status: true, uploaderId: true, collegeId: true },
+    });
+    if (!video) throw new HttpError(404, 'Video not found');
+
+    // Public/child must only access published videos
+    if (!params.viewerRole || params.viewerRole === UserRole.CHILD) {
+      if (video.status !== VideoStatus.PUBLISHED) throw new HttpError(404, 'Video not found');
+    }
+
+    // Determine visibility of comment statuses
+    let allowAllStatuses = false;
+    if (params.viewerRole === UserRole.PLATFORM_ADMIN) {
+      allowAllStatuses = true;
+    } else if (params.viewerRole === UserRole.COLLEGE_ADMIN) {
+      if (!params.viewerCollegeId) throw new HttpError(400, 'Admin must belong to a college');
+      allowAllStatuses = video.collegeId === params.viewerCollegeId;
+    } else if (params.viewerRole === UserRole.VOLUNTEER) {
+      allowAllStatuses = Boolean(params.viewerUserId) && video.uploaderId === params.viewerUserId;
+    }
+
+    const where: any = { videoId: params.videoId };
+    if (!allowAllStatuses) {
+      where.status = CommentStatus.APPROVED;
+    }
+
+    const [total, items] = await Promise.all([
+      prisma.videoComment.count({ where }),
+      prisma.videoComment.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip,
+        take: pageSize,
+        include: {
+          author: { select: { id: true, username: true, role: true, childProfile: true } },
+        },
+      }),
+    ]);
+
+    return { items, total, page, pageSize };
+  }
+
+  static async auditVideoComment(params: {
+    adminUserId: number;
+    adminRole: UserRole;
+    adminCollegeId?: number;
+    commentId: number;
+    pass: boolean;
+    reason?: string;
+  }) {
+    const { adminUserId, adminRole, adminCollegeId, commentId, pass, reason } = params;
+
+    if (adminRole !== UserRole.COLLEGE_ADMIN && adminRole !== UserRole.PLATFORM_ADMIN) {
+      throw new HttpError(403, 'Forbidden');
+    }
+    if (!pass && (!reason || !reason.trim())) throw new HttpError(400, 'Reject reason is required');
+
+    const comment = await prisma.videoComment.findUnique({
+      where: { id: commentId },
+      include: { video: { select: { id: true, collegeId: true } } },
+    });
+    if (!comment) throw new HttpError(404, 'Comment not found');
+
+    if (adminRole === UserRole.COLLEGE_ADMIN) {
+      if (!adminCollegeId) throw new HttpError(400, 'Admin must belong to a college');
+      if (comment.video.collegeId !== adminCollegeId) throw new HttpError(403, 'Forbidden: cross-college access');
+    }
+
+    const newStatus = pass ? CommentStatus.APPROVED : CommentStatus.REJECTED;
+    const updated = await prisma.videoComment.update({
+      where: { id: commentId },
+      data: {
+        status: newStatus,
+        rejectReason: pass ? null : (reason || null),
+        reviewedBy: adminUserId,
+        reviewedAt: new Date(),
+      },
+      include: { author: { select: { id: true, username: true, role: true, childProfile: true } } },
+    });
+
+    const action = pass ? AuditAction.REVIEW_PASS : AuditAction.REVIEW_REJECT;
+    await AuditService.log(adminUserId, action, String(commentId), 'VideoComment', reason);
+    return updated;
+  }
+
+  static async upsertWatchLog(params: {
+    videoId: number;
+    userId: number;
+    viewerRole: UserRole;
+    viewerCollegeId?: number;
+    lastPositionSec: number;
+    watchedSecondsDelta: number;
+    completed?: boolean;
+  }) {
+    // Ensure access (children only published; volunteers/admins follow existing getVideo rules)
+    await this.getVideoById({
+      videoId: params.videoId,
+      viewerRole: params.viewerRole,
+      viewerUserId: params.userId,
+      viewerCollegeId: params.viewerCollegeId,
+    });
+
+    const lastPositionSec = Math.max(0, Math.floor(params.lastPositionSec || 0));
+    const delta = Math.max(0, Math.floor(params.watchedSecondsDelta || 0));
+
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.videoWatchLog.findUnique({ where: { videoId_userId: { videoId: params.videoId, userId: params.userId } } });
+
+      if (!existing) {
+        const created = await tx.videoWatchLog.create({
+          data: {
+            videoId: params.videoId,
+            userId: params.userId,
+            lastPositionSec,
+            watchedSeconds: delta,
+            completed: Boolean(params.completed ?? false),
+          },
+        });
+
+        await tx.videoMetrics.upsert({
+          where: { videoId: params.videoId },
+          update: { playCount: { increment: 1 } },
+          create: { videoId: params.videoId, playCount: 1, likeCount: 0, favCount: 0 },
+        });
+
+        return created;
+      }
+
+      const updated = await tx.videoWatchLog.update({
+        where: { videoId_userId: { videoId: params.videoId, userId: params.userId } },
+        data: {
+          lastPositionSec,
+          watchedSeconds: { increment: delta },
+          ...(typeof params.completed === 'boolean' ? { completed: params.completed || existing.completed } : {}),
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  static async getVolunteerVideoDashboard(volunteerUserId: number) {
+    const videos = await prisma.video.findMany({
+      where: { uploaderId: volunteerUserId },
+      include: { metrics: true },
+      orderBy: [{ createdAt: 'desc' }],
+    });
+
+    const statusCounts = await prisma.video.groupBy({
+      by: ['status'],
+      where: { uploaderId: volunteerUserId },
+      _count: { _all: true },
+    });
+
+    const map: Record<string, number> = {};
+    for (const row of statusCounts as any) map[String(row.status)] = row._count._all;
+
+    const approved = map[VideoStatus.APPROVED] ?? 0;
+    const rejected = map[VideoStatus.REJECTED] ?? 0;
+    const reviewedTotal = approved + rejected;
+    const passRate = reviewedTotal === 0 ? null : approved / reviewedTotal;
+
+    const totals = videos.reduce(
+      (acc, v) => {
+        acc.play += v.metrics?.playCount ?? 0;
+        acc.like += v.metrics?.likeCount ?? 0;
+        acc.fav += v.metrics?.favCount ?? 0;
+        return acc;
+      },
+      { play: 0, like: 0, fav: 0 }
+    );
+
+    return {
+      totals: {
+        videoCount: videos.length,
+        playCount: totals.play,
+        likeCount: totals.like,
+        favCount: totals.fav,
+        passRate,
+      },
+      byStatus: map,
+      videos,
+    };
   }
 }

@@ -1,5 +1,5 @@
 import { prisma } from '../config/prisma';
-import { AuditAction, LiveStatus, UserRole } from '../types/enums';
+import { AuditAction, LiveMessageType, LiveStatus, UserRole } from '../types/enums';
 import { AuditService } from './audit.service';
 import { HttpError } from '../utils/httpError';
 
@@ -430,6 +430,10 @@ export class LiveService {
   }
 
   static async finishLive(anchorUserId: number, liveId: number) {
+    return this.finishLiveWithReplay(anchorUserId, liveId, undefined);
+  }
+
+  static async finishLiveWithReplay(anchorUserId: number, liveId: number, replayVideoId?: number) {
     const result = await prisma.liveRoom.updateMany({
       where: {
         id: liveId,
@@ -439,6 +443,7 @@ export class LiveService {
       data: {
         status: LiveStatus.FINISHED,
         actualEnd: new Date(),
+        ...(replayVideoId ? { replayVideoId } : {}),
       },
     });
 
@@ -454,6 +459,86 @@ export class LiveService {
 
     await AuditService.log(anchorUserId, AuditAction.UPDATE, String(liveId), 'LiveRoom', 'Finish live');
     return prisma.liveRoom.findUnique({ where: { id: liveId } });
+  }
+
+  static async listMessages(params: {
+    liveId: number;
+    viewerRole: UserRole;
+    viewerUserId: number;
+    viewerCollegeId?: number;
+    afterId?: number;
+    limit?: number;
+  }) {
+    // Access control uses existing visibility rules
+    await this.getLiveById({
+      liveId: params.liveId,
+      viewerRole: params.viewerRole,
+      viewerUserId: params.viewerUserId,
+      viewerCollegeId: params.viewerCollegeId,
+    });
+
+    const limit = params.limit && Number.isFinite(params.limit) ? Math.min(100, Math.max(1, params.limit)) : 50;
+    const where: any = { liveId: params.liveId };
+    if (params.afterId && Number.isFinite(params.afterId)) {
+      where.id = { gt: params.afterId };
+    }
+
+    const items = await prisma.liveMessage.findMany({
+      where,
+      orderBy: { id: 'asc' },
+      take: limit,
+      include: {
+        sender: { select: { id: true, username: true, role: true, childProfile: true } },
+      },
+    });
+
+    return items;
+  }
+
+  static async sendMessage(params: {
+    liveId: number;
+    senderId: number;
+    senderRole: UserRole;
+    senderCollegeId?: number;
+    type?: LiveMessageType;
+    content: string;
+  }) {
+    const live = await prisma.liveRoom.findUnique({
+      where: { id: params.liveId },
+      select: { id: true, status: true, collegeId: true },
+    });
+    if (!live) throw new HttpError(404, 'Live not found');
+
+    // Only allow chatting during LIVING
+    if (live.status !== LiveStatus.LIVING) {
+      throw new HttpError(400, `Live is not in progress (current: ${live.status})`);
+    }
+
+    // College admin is limited to own college
+    if (params.senderRole === UserRole.COLLEGE_ADMIN) {
+      if (!params.senderCollegeId) throw new HttpError(400, 'Admin must belong to a college');
+      if (live.collegeId !== params.senderCollegeId) throw new HttpError(404, 'Live not found');
+    }
+
+    const text = (params.content ?? '').trim();
+    if (!text) throw new HttpError(400, 'content is required');
+    if (text.length > 500) throw new HttpError(400, 'content too long');
+
+    const type = params.type ?? LiveMessageType.CHAT;
+
+    const created = await prisma.liveMessage.create({
+      data: {
+        liveId: params.liveId,
+        senderId: params.senderId,
+        type,
+        content: text,
+      },
+      include: {
+        sender: { select: { id: true, username: true, role: true, childProfile: true } },
+      },
+    });
+
+    return created;
   }
 
   static async getStreamInfo(params: {

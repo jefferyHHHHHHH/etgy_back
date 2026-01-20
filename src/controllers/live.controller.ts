@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { LiveService } from '../services/live.service';
 import { UserService } from '../services/user.service';
 import { HttpError } from '../utils/httpError';
-import { UserRole } from '../types/enums';
+import { LiveMessageType, UserRole } from '../types/enums';
 
 export class LiveController {
   static async listPublic(req: Request, res: Response) {
@@ -218,8 +218,61 @@ export class LiveController {
     try {
       const user = req.user!;
       const { id } = req.params;
-      const updated = await LiveService.finishLive(user.userId, Number(id));
+      const replayVideoId = req.body?.replayVideoId ? Number(req.body.replayVideoId) : undefined;
+      const updated = await LiveService.finishLiveWithReplay(user.userId, Number(id), replayVideoId);
       return res.json({ code: 200, message: 'Live finished', data: updated });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
+  static async listMessages(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const { id } = req.params;
+
+      const profile = await UserService.getUserProfile(user.userId);
+      const viewerCollegeId = profile?.adminProfile?.collegeId ?? profile?.volunteerProfile?.collegeId ?? undefined;
+
+      const items = await LiveService.listMessages({
+        liveId: Number(id),
+        viewerRole: user.role as UserRole,
+        viewerUserId: user.userId,
+        viewerCollegeId,
+        afterId: req.query.afterId ? Number(req.query.afterId) : undefined,
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+      });
+
+      return res.json({ code: 200, message: 'Success', data: items });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
+  static async sendMessage(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const { id } = req.params;
+
+      const profile = await UserService.getUserProfile(user.userId);
+      const senderCollegeId = profile?.adminProfile?.collegeId ?? profile?.volunteerProfile?.collegeId ?? undefined;
+
+      const created = await LiveService.sendMessage({
+        liveId: Number(id),
+        senderId: user.userId,
+        senderRole: user.role as UserRole,
+        senderCollegeId,
+        type: (req.body?.type as LiveMessageType | undefined) ?? undefined,
+        content: req.body?.content,
+      });
+
+      return res.status(201).json({ code: 201, message: 'Created', data: created });
     } catch (error: any) {
       if (error instanceof HttpError) {
         return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });

@@ -289,4 +289,180 @@ export class ContentController {
       res.status(400).json({ code: 400, message: error.message });
     }
   }
+
+  /**
+   * PATCH /api/videos/:id
+   */
+  static async updateVideo(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const { id } = req.params;
+      const updated = await ContentService.updateVideo(user.userId, Number(id), req.body);
+      return res.json({ code: 200, message: 'Updated', data: updated });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
+  /**
+   * DELETE /api/videos/:id
+   */
+  static async deleteVideo(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const { id } = req.params;
+      const result = await ContentService.deleteVideo(user.userId, Number(id));
+      return res.json({ code: 200, message: 'Deleted', data: result });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
+  static async toggleLike(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const { id } = req.params;
+      const data = await ContentService.toggleLike(user.userId, Number(id));
+      return res.json({ code: 200, message: 'Success', data });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
+  static async toggleFavorite(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const { id } = req.params;
+      const data = await ContentService.toggleFavorite(user.userId, Number(id));
+      return res.json({ code: 200, message: 'Success', data });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
+  static async listVideoComments(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const user = req.user;
+
+      let viewerCollegeId: number | undefined;
+      if (user) {
+        const profile = await UserService.getUserProfile(user.userId);
+        viewerCollegeId = profile?.adminProfile?.collegeId ?? profile?.volunteerProfile?.collegeId ?? undefined;
+      }
+
+      const result = await ContentService.listVideoComments({
+        videoId: Number(id),
+        viewerRole: user?.role as UserRole | undefined,
+        viewerUserId: user?.userId,
+        viewerCollegeId,
+        page: req.query.page ? Number(req.query.page) : 1,
+        pageSize: req.query.pageSize ? Number(req.query.pageSize) : 20,
+      });
+
+      res.setHeader('X-Total-Count', String(result.total));
+      res.setHeader('X-Page', String(result.page));
+      res.setHeader('X-Page-Size', String(result.pageSize));
+      return res.json({ code: 200, message: 'Success', data: result.items });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
+  static async createVideoComment(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const { id } = req.params;
+      const created = await ContentService.createVideoComment(user.userId, Number(id), req.body.content);
+      return res.status(201).json({ code: 201, message: 'Created', data: created });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
+  static async auditVideoComment(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const { commentId } = req.params;
+      const { pass, reason } = req.body;
+
+      const profile = await UserService.getUserProfile(user.userId);
+      const adminCollegeId = profile?.adminProfile?.collegeId ?? undefined;
+
+      const updated = await ContentService.auditVideoComment({
+        adminUserId: user.userId,
+        adminRole: user.role as UserRole,
+        adminCollegeId,
+        commentId: Number(commentId),
+        pass: Boolean(pass),
+        reason,
+      });
+
+      return res.json({ code: 200, message: 'Audit complete', data: updated });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
+  static async reportWatchLog(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const { id } = req.params;
+
+      let viewerCollegeId: number | undefined;
+      const profile = await UserService.getUserProfile(user.userId);
+      viewerCollegeId = profile?.adminProfile?.collegeId ?? profile?.volunteerProfile?.collegeId ?? undefined;
+
+      const log = await ContentService.upsertWatchLog({
+        videoId: Number(id),
+        userId: user.userId,
+        viewerRole: user.role as UserRole,
+        viewerCollegeId,
+        lastPositionSec: Number(req.body.lastPositionSec ?? 0),
+        watchedSecondsDelta: Number(req.body.watchedSeconds ?? 0),
+        completed: typeof req.body.completed === 'boolean' ? Boolean(req.body.completed) : undefined,
+      });
+
+      return res.json({ code: 200, message: 'Success', data: log });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
+  static async getMyVideoDashboard(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const data = await ContentService.getVolunteerVideoDashboard(user.userId);
+      return res.json({ code: 200, message: 'Success', data });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
 }

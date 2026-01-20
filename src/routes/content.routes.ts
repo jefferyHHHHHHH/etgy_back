@@ -6,7 +6,7 @@ import { UserRole } from '../types/enums';
 import { validateBody, validateParams, validateQuery } from '../middlewares/validate.middleware';
 import { VideoStatus } from '../types/enums';
 import { apiResponse, BaseResponseSchema, ErrorResponseSchema, registerPath } from '../docs/openapi';
-import { VideoSchema } from '../docs/schemas';
+import { LiveMessageSchema, VideoCommentSchema, VideoSchema, VideoWatchLogSchema } from '../docs/schemas';
 import { requireAnyPermissions, requirePermissions } from '../middlewares/permission.middleware';
 import { Permission } from '../types/permissions';
 
@@ -19,6 +19,16 @@ const idParamSchema = z.object({
 const createVideoBodySchema = z.object({
 	title: z.string().min(1),
 	url: z.string().min(1),
+	intro: z.string().optional(),
+	coverUrl: z.string().optional(),
+	duration: z.coerce.number().int().positive().optional(),
+	gradeRange: z.string().optional(),
+	subjectTag: z.string().optional(),
+});
+
+const updateVideoBodySchema = z.object({
+	title: z.string().min(1).optional(),
+	url: z.string().min(1).optional(),
 	intro: z.string().optional(),
 	coverUrl: z.string().optional(),
 	duration: z.coerce.number().int().positive().optional(),
@@ -51,6 +61,30 @@ const auditBatchBodySchema = z.object({
 
 const offlineBodySchema = z.object({
 	reason: z.string().optional(),
+});
+
+const commentCreateBodySchema = z.object({
+	content: z.string().min(1).max(2000),
+});
+
+const listCommentsQuerySchema = z.object({
+	page: z.coerce.number().int().min(1).default(1),
+	pageSize: z.coerce.number().int().min(1).max(50).default(20),
+});
+
+const auditCommentBodySchema = z.object({
+	pass: z.coerce.boolean(),
+	reason: z.string().optional(),
+});
+
+const commentIdParamSchema = z.object({
+	commentId: z.string().regex(/^\d+$/, 'commentId must be a positive integer'),
+});
+
+const watchBodySchema = z.object({
+	lastPositionSec: z.coerce.number().int().min(0).default(0),
+	watchedSeconds: z.coerce.number().int().min(0).default(0).describe('本次增量观看秒数（delta）'),
+	completed: z.coerce.boolean().optional(),
 });
 
 // OpenAPI registration (single source of truth = Zod schemas)
@@ -118,6 +152,148 @@ registerPath({
 		201: { description: 'Created', content: { 'application/json': { schema: apiResponse(VideoSchema) } } },
 		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
 		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'patch',
+	path: '/api/videos/{id}',
+	summary: '编辑视频（志愿者：草稿/驳回）',
+	tags: ['Videos'],
+	security: [{ bearerAuth: [] }],
+	request: {
+		params: idParamSchema,
+		body: { content: { 'application/json': { schema: updateVideoBodySchema } } },
+	},
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(VideoSchema) } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'delete',
+	path: '/api/videos/{id}',
+	summary: '删除视频（志愿者：草稿/驳回）',
+	tags: ['Videos'],
+	security: [{ bearerAuth: [] }],
+	request: { params: idParamSchema },
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/videos/{id}/like',
+	summary: '点赞/取消点赞（登录用户）',
+	tags: ['Videos'],
+	security: [{ bearerAuth: [] }],
+	request: { params: idParamSchema },
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/videos/{id}/favorite',
+	summary: '收藏/取消收藏（登录用户）',
+	tags: ['Videos'],
+	security: [{ bearerAuth: [] }],
+	request: { params: idParamSchema },
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'get',
+	path: '/api/videos/{id}/comments',
+	summary: '获取视频评论列表（公开：仅已通过）',
+	tags: ['Videos'],
+	request: { params: idParamSchema, query: listCommentsQuerySchema },
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(z.array(VideoCommentSchema)) } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/videos/{id}/comments',
+	summary: '发表评论（儿童/登录用户，默认待审核）',
+	tags: ['Videos'],
+	security: [{ bearerAuth: [] }],
+	request: {
+		params: idParamSchema,
+		body: { content: { 'application/json': { schema: commentCreateBodySchema } } },
+	},
+	responses: {
+		201: { description: 'Created', content: { 'application/json': { schema: apiResponse(VideoCommentSchema) } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/videos/comments/{commentId}/audit',
+	summary: '审核评论（管理员）',
+	tags: ['Videos'],
+	security: [{ bearerAuth: [] }],
+	request: {
+		params: commentIdParamSchema,
+		body: { content: { 'application/json': { schema: auditCommentBodySchema } } },
+	},
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(VideoCommentSchema) } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/videos/{id}/watch',
+	summary: '上报学习/播放记录（登录用户）',
+	tags: ['Videos'],
+	security: [{ bearerAuth: [] }],
+	request: {
+		params: idParamSchema,
+		body: { content: { 'application/json': { schema: watchBodySchema } } },
+	},
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(VideoWatchLogSchema) } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'get',
+	path: '/api/videos/mine/dashboard',
+	summary: '志愿者视频数据面板（我的）',
+	tags: ['Videos'],
+	security: [{ bearerAuth: [] }],
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
 	},
 });
 
@@ -252,6 +428,20 @@ router.get(
 	ContentController.getVideo
 );
 
+// Public comments list (optional auth)
+router.get(
+	'/:id/comments',
+	validateParams(idParamSchema),
+	validateQuery(listCommentsQuerySchema),
+	(req, res, next) => {
+		const authHeader = req.headers.authorization;
+		const hasBearer = typeof authHeader === 'string' && authHeader.startsWith('Bearer ');
+		if (hasBearer) return authMiddleware(req, res, next);
+		return next();
+	},
+	ContentController.listVideoComments
+);
+
 // Public media urls (optional auth)
 router.get(
 	'/:id/media-urls',
@@ -267,6 +457,9 @@ router.get(
 
 // Protected Routes (All other video operations require login)
 router.use(authMiddleware);
+
+// Volunteer dashboard (must be before '/:id' mutations if any future pattern overlaps)
+router.get('/mine/dashboard', requireRole([UserRole.VOLUNTEER]), ContentController.getMyVideoDashboard);
 
 // Admin management routes
 router.get(
@@ -289,6 +482,23 @@ router.post(
 // Volunteer operations
 // POST /api/videos - Upload
 router.post('/', requireRole([UserRole.VOLUNTEER]), validateBody(createVideoBodySchema), ContentController.createVideo);
+
+// Edit / delete video (only draft/rejected)
+router.patch(
+	'/:id',
+	requireRole([UserRole.VOLUNTEER]),
+	requirePermissions([Permission.VIDEO_EDIT]),
+	validateParams(idParamSchema),
+	validateBody(updateVideoBodySchema),
+	ContentController.updateVideo
+);
+router.delete(
+	'/:id',
+	requireRole([UserRole.VOLUNTEER]),
+	requirePermissions([Permission.VIDEO_DELETE]),
+	validateParams(idParamSchema),
+	ContentController.deleteVideo
+);
 
 // POST /api/videos/:id/submit - Submit for review
 router.post(
@@ -317,6 +527,27 @@ router.post(
 	validateParams(idParamSchema),
 	ContentController.publishVideo
 );
+
+// Interactions
+router.post('/:id/like', validateParams(idParamSchema), ContentController.toggleLike);
+router.post('/:id/favorite', validateParams(idParamSchema), ContentController.toggleFavorite);
+router.post(
+	'/:id/comments',
+	validateParams(idParamSchema),
+	validateBody(commentCreateBodySchema),
+	ContentController.createVideoComment
+);
+router.post(
+	'/comments/:commentId/audit',
+	requireRole([UserRole.COLLEGE_ADMIN, UserRole.PLATFORM_ADMIN]),
+	requirePermissions([Permission.COMMENT_REVIEW]),
+	validateParams(commentIdParamSchema),
+	validateBody(auditCommentBodySchema),
+	ContentController.auditVideoComment
+);
+
+// Study/watch record
+router.post('/:id/watch', validateParams(idParamSchema), validateBody(watchBodySchema), ContentController.reportWatchLog);
 
 // Offline operations (volunteer self-offline OR admin force offline)
 // POST /api/videos/:id/offline

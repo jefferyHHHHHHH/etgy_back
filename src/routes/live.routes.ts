@@ -3,9 +3,9 @@ import { z } from 'zod';
 import { authMiddleware, requireRole } from '../middlewares/auth.middleware';
 import { validateBody, validateParams, validateQuery } from '../middlewares/validate.middleware';
 import { LiveController } from '../controllers/live.controller';
-import { LiveStatus, UserRole } from '../types/enums';
+import { LiveMessageType, LiveStatus, UserRole } from '../types/enums';
 import { apiResponse, BaseResponseSchema, ErrorResponseSchema, registerPath } from '../docs/openapi';
-import { LiveRoomSchema } from '../docs/schemas';
+import { LiveMessageSchema, LiveRoomSchema } from '../docs/schemas';
 
 const router = Router();
 
@@ -50,6 +50,20 @@ const auditBodySchema = z.object({
 
 const offlineBodySchema = z.object({
   reason: z.string().optional(),
+});
+
+const finishBodySchema = z.object({
+  replayVideoId: z.coerce.number().int().positive().optional(),
+});
+
+const messageListQuerySchema = z.object({
+  afterId: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+const messageSendBodySchema = z.object({
+  type: z.nativeEnum(LiveMessageType).optional(),
+  content: z.string().min(1).max(500),
 });
 
 // OpenAPI registration
@@ -211,12 +225,49 @@ registerPath({
   summary: '结束直播（志愿者）',
   tags: ['Live'],
   security: [{ bearerAuth: [] }],
-  request: { params: idParamSchema },
+  request: {
+    params: idParamSchema,
+    body: { content: { 'application/json': { schema: finishBodySchema } } },
+  },
   responses: {
     200: { description: 'OK', content: { 'application/json': { schema: apiResponse(LiveRoomSchema) } } },
     400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
     403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registerPath({
+  method: 'get',
+  path: '/api/live/{id}/messages',
+  summary: '直播消息列表（登录用户）',
+  tags: ['Live'],
+  security: [{ bearerAuth: [] }],
+  request: { params: idParamSchema, query: messageListQuerySchema },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: apiResponse(z.array(LiveMessageSchema)) } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registerPath({
+  method: 'post',
+  path: '/api/live/{id}/messages',
+  summary: '发送直播消息（登录用户）',
+  tags: ['Live'],
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: idParamSchema,
+    body: { content: { 'application/json': { schema: messageSendBodySchema } } },
+  },
+  responses: {
+    201: { description: 'Created', content: { 'application/json': { schema: apiResponse(LiveMessageSchema) } } },
+    400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });
 
@@ -275,7 +326,27 @@ router.post('/', requireRole([UserRole.VOLUNTEER]), validateBody(createLiveBodyS
 router.post('/:id/submit', requireRole([UserRole.VOLUNTEER]), validateParams(idParamSchema), LiveController.submitReview);
 router.post('/:id/publish', requireRole([UserRole.VOLUNTEER]), validateParams(idParamSchema), LiveController.publishLive);
 router.post('/:id/start', requireRole([UserRole.VOLUNTEER]), validateParams(idParamSchema), LiveController.startLive);
-router.post('/:id/finish', requireRole([UserRole.VOLUNTEER]), validateParams(idParamSchema), LiveController.finishLive);
+router.post(
+  '/:id/finish',
+  requireRole([UserRole.VOLUNTEER]),
+  validateParams(idParamSchema),
+  validateBody(finishBodySchema),
+  LiveController.finishLive
+);
+
+// Live messages
+router.get(
+  '/:id/messages',
+  validateParams(idParamSchema),
+  validateQuery(messageListQuerySchema),
+  LiveController.listMessages
+);
+router.post(
+  '/:id/messages',
+  validateParams(idParamSchema),
+  validateBody(messageSendBodySchema),
+  LiveController.sendMessage
+);
 
 // Offline (volunteer self offline OR admin force offline)
 router.post(
