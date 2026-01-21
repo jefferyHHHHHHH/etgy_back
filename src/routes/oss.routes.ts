@@ -56,7 +56,10 @@ const uploadFileParamsSchema = z.object({
   folder: z.enum(['images', 'videos']),
 });
 
-// Multipart endpoints are documented as generic; Swagger UI won't fully model multipart well here.
+const uploadFileMultipartBodySchema = z.object({
+  file: z.string().openapi({ type: 'string', format: 'binary', description: '上传文件字段名必须为 file' }),
+});
+
 registerPath({
   method: 'post',
   path: '/api/oss/upload/{folder}',
@@ -65,6 +68,13 @@ registerPath({
   security: [{ bearerAuth: [] }],
   request: {
     params: uploadFileParamsSchema,
+    body: {
+      content: {
+        'multipart/form-data': {
+          schema: uploadFileMultipartBodySchema,
+        },
+      },
+    },
   },
   responses: {
     200: { description: 'Success', content: { 'application/json': { schema: apiResponse(z.any()) } } },

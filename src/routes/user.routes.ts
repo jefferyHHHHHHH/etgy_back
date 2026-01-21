@@ -8,6 +8,7 @@ import { Gender, VolunteerStatus } from '../types/enums';
 import { apiResponse, ErrorResponseSchema, registerPath } from '../docs/openapi';
 import { requirePermissions } from '../middlewares/permission.middleware';
 import { Permission } from '../types/permissions';
+import multer from 'multer';
 
 const router = Router();
 
@@ -35,6 +36,27 @@ const createChildBodySchema = z.object({
 
 const createChildrenBatchBodySchema = z.object({
 	items: z.array(createChildBodySchema).min(1),
+});
+
+const createChildrenBatchExcelBodySchema = z.object({
+	file: z.string().openapi({ type: 'string', format: 'binary', description: 'Excel 文件（.xlsx），字段名固定为 file' }),
+});
+
+const createChildrenBatchExcelResultSchema = z.object({
+	total: z.number().int().nonnegative(),
+	success: z.number().int().nonnegative(),
+	failed: z.number().int().nonnegative(),
+	results: z.array(
+		z.union([
+			z.object({ rowNumber: z.number().int().positive(), ok: z.literal(true), username: z.string(), userId: z.number().int().positive() }),
+			z.object({ rowNumber: z.number().int().positive(), ok: z.literal(false), username: z.string(), message: z.string() }),
+		])
+	),
+});
+
+const excelUpload = multer({
+	storage: multer.memoryStorage(),
+	limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
 });
 
 const listChildrenQuerySchema = z.object({
@@ -109,6 +131,49 @@ registerPath({
 	responses: {
 		201: { description: 'Created', content: { 'application/json': { schema: apiResponse(z.any()) } } },
 		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/users/children/batch-excel',
+	summary: '批量导入儿童账号（Excel .xlsx）',
+	tags: ['Users'],
+	security: [{ bearerAuth: [] }],
+	request: {
+		body: {
+			content: {
+				'multipart/form-data': {
+					schema: createChildrenBatchExcelBodySchema,
+				},
+			},
+		},
+	},
+	responses: {
+		201: { description: 'Created', content: { 'application/json': { schema: apiResponse(createChildrenBatchExcelResultSchema) } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'get',
+	path: '/api/users/children/batch-excel/template',
+	summary: '下载儿童批量导入 Excel 模板（.xlsx）',
+	tags: ['Users'],
+	security: [{ bearerAuth: [] }],
+	responses: {
+		200: {
+			description: 'Excel template',
+			content: {
+				'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': {
+					schema: z.string().openapi({ type: 'string', format: 'binary' }),
+				},
+			},
+		},
 		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
 		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
 	},
@@ -267,6 +332,21 @@ router.post(
 	requirePermissions([Permission.USER_CHILD_CREATE]),
 	validateBody(createChildrenBatchBodySchema),
 	UserController.createChildrenBatch
+);
+
+router.post(
+	'/children/batch-excel',
+	requireRole([UserRole.PLATFORM_ADMIN]),
+	requirePermissions([Permission.USER_CHILD_CREATE]),
+	excelUpload.single('file'),
+	UserController.createChildrenBatchExcel
+);
+
+router.get(
+	'/children/batch-excel/template',
+	requireRole([UserRole.PLATFORM_ADMIN]),
+	requirePermissions([Permission.USER_CHILD_CREATE]),
+	UserController.downloadChildrenBatchExcelTemplate
 );
 
 router.get(

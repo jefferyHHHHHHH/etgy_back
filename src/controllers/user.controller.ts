@@ -3,6 +3,8 @@ import { UserService } from '../services/user.service';
 // import { UserRole, VolunteerStatus } from '@prisma/client';
 import { UserRole, UserStatus, VolunteerStatus } from '../types/enums';
 import { HttpError } from '../utils/httpError';
+import { parseChildrenExcel } from '../utils/childrenExcel';
+import * as XLSX from 'xlsx';
 
 export class UserController {
   
@@ -45,6 +47,98 @@ export class UserController {
         return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
       }
       return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
+  static async createChildrenBatchExcel(req: Request, res: Response) {
+    try {
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ code: 400, message: 'file is required (multipart field name: file)' });
+      }
+
+      const parsed = parseChildrenExcel(file.buffer);
+      const created = await UserService.createChildrenBatch(parsed.valid.map((v) => v.item));
+
+      const results = [
+        ...parsed.invalid.map((r) => ({ rowNumber: r.rowNumber, ok: false as const, username: r.username, message: r.message })),
+        ...created.results.map((r, idx) => ({ rowNumber: parsed.valid[idx]!.rowNumber, ...r })),
+      ].sort((a, b) => a.rowNumber - b.rowNumber);
+
+      const success = created.success;
+      const total = parsed.totalRows;
+      const failed = total - success;
+
+      return res.status(201).json({
+        code: 201,
+        message: 'Batch complete',
+        data: {
+          total,
+          success,
+          failed,
+          results,
+        },
+      });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error?.message || 'Bad Request' });
+    }
+  }
+
+  static async downloadChildrenBatchExcelTemplate(req: Request, res: Response) {
+    try {
+      // Sheet1: template header only (avoid users accidentally importing sample rows)
+      const templateRows = [['用户名', '密码', '姓名', '性别', '学校', '年级']];
+      const wsTemplate = XLSX.utils.aoa_to_sheet(templateRows);
+      (wsTemplate as any)['!cols'] = [
+        { wch: 18 },
+        { wch: 16 },
+        { wch: 14 },
+        { wch: 10 },
+        { wch: 24 },
+        { wch: 10 },
+      ];
+
+      // Sheet2: explanation + example table (Chinese)
+      const exampleRows = [
+        ['填写说明（请不要修改“导入模板”工作表的表头）'],
+        ['1）必填列：用户名、密码、姓名、学校、年级。性别可填：男 / 女 / 未知（不填默认未知）'],
+        ['2）密码长度至少 6 位；同一个用户名不能重复'],
+        ['3）本文件包含示例行：请复制粘贴到“导入模板”后再上传'],
+        [],
+        ['示例表格（仅示例，不会被导入）'],
+        ['用户名', '密码', '姓名', '性别', '学校', '年级'],
+        ['child_001', 'Passw0rd!', '张三', '未知', '示例小学', '3'],
+        ['child_002', 'Passw0rd!', '李四', '男', '示例小学', '4'],
+      ];
+      const wsExample = XLSX.utils.aoa_to_sheet(exampleRows);
+      (wsExample as any)['!cols'] = [
+        { wch: 30 },
+        { wch: 16 },
+        { wch: 14 },
+        { wch: 10 },
+        { wch: 24 },
+        { wch: 10 },
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, wsTemplate, '导入模板');
+      XLSX.utils.book_append_sheet(wb, wsExample, '示例与说明');
+      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      );
+      res.setHeader(
+        'Content-Disposition',
+        'attachment; filename="children-import-template.xlsx"'
+      );
+      return res.status(200).send(buf);
+    } catch (error: any) {
+      return res.status(500).json({ code: 500, message: error?.message || 'Internal Server Error' });
     }
   }
 
