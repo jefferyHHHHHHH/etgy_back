@@ -145,6 +145,26 @@
 - **启动开发环境**: `npm run dev` (使用 `nodemon` 热重载)
 - **构建项目**: `npm run build` (使用 `tsc` 编译)
 - **生产环境启动**: `npm start` (运行 `dist/server.js`)
+- **内容合规冒烟**: `npm run smoke:moderation`
+  - 前置条件：需要可用的 MySQL/Redis（可用 `docker compose up -d`），并已完成 `npm run db:push` / `npm run db:seed`
+  - 覆盖范围：评论/弹幕开关、敏感词 REJECT/MASK、敏感词导入/导出（txt）
+
+### 5.6 内容合规（敏感词 + 评论/弹幕开关）
+
+本项目提供平台侧“内容合规策略”能力：
+
+- **开关**：一键关闭评论、关闭直播弹幕（仅影响 `CHAT`，不影响 `QA`）
+- **敏感词策略**：
+  - `REJECT`：命中敏感词直接拒绝
+  - `MASK`：命中敏感词脱敏后入库
+
+平台侧常用接口：
+- `GET /api/platform/content-policy` / `PUT /api/platform/content-policy`
+- `GET /api/platform/sensitive-words` / `POST /api/platform/sensitive-words`
+- `POST /api/platform/sensitive-words/batch`
+- `PATCH /api/platform/sensitive-words/:id` / `DELETE /api/platform/sensitive-words/:id`
+- `GET /api/platform/sensitive-words/export?format=txt|csv`
+- `POST /api/platform/sensitive-words/import?format=txt|csv`（multipart 上传文件）
 
 ### 5.3 代码规范
 
