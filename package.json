@@ -8,6 +8,7 @@
     "db:push": "prisma db push",
     "db:seed": "ts-node --files prisma/seed.ts",
     "build": "tsc",
+    "smoke:moderation": "node -e \"require('ts-node').register({ files: true }); require('./scripts/moderation-smoke.ts');\"",
     "start": "node dist/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
