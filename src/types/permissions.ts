@@ -34,6 +34,9 @@ export enum Permission {
   // Comments (optional feature in PRD)
   COMMENT_REVIEW = 'comment.review',
 
+  // Content moderation (policy switches + sensitive words)
+  CONTENT_POLICY_MANAGE = 'contentPolicy.manage',
+
   // Live
   LIVE_CREATE = 'live.create',
   LIVE_SUBMIT = 'live.submit',
@@ -81,6 +84,7 @@ export const rolePermissions: Record<UserRole, Set<Permission>> = {
     Permission.VIDEO_OFFLINE,
     Permission.COMMENT_REVIEW,
     Permission.LIVE_OFFLINE,
+    Permission.CONTENT_POLICY_MANAGE,
   ]),
 };
 

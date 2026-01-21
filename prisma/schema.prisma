@@ -360,3 +360,29 @@ model AuditLog {
   createdAt  DateTime    @default(now())
 }
 
+// -----------------------------------------------------------------------------
+// Content Moderation Domain (Sensitive words + feature switches)
+// -----------------------------------------------------------------------------
+
+enum ModerationAction {
+  REJECT
+  MASK
+}
+
+model ContentPolicy {
+  id               Int              @id @default(autoincrement())
+  commentsEnabled  Boolean          @default(true)
+  liveChatEnabled  Boolean          @default(true)
+  moderationAction ModerationAction @default(REJECT)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
+
+model SensitiveWord {
+  id        Int      @id @default(autoincrement())
+  word      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
