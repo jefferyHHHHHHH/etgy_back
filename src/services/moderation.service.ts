@@ -97,10 +97,10 @@ export class ModerationService {
 
     // Prefer longer first to reduce partial masking when words overlap.
     const words = rows
-      .map((r) => r.word)
-      .map((w) => w.trim())
+      .map((r: { word: string }) => r.word)
+      .map((w: string) => w.trim())
       .filter(Boolean)
-      .sort((a, b) => b.length - a.length || a.localeCompare(b));
+      .sort((a: string, b: string) => b.length - a.length || a.localeCompare(b));
 
     this.wordsCache = { value: words, expiresAt: now + this.CACHE_TTL_MS };
     return words;

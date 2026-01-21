@@ -463,7 +463,7 @@ export class PlatformService {
 
     if (format === 'csv') {
       const header = 'word';
-      const lines = words.map((w) => {
+      const lines = words.map((w: string) => {
         // Quote if contains comma/quote/newline
         if (/[",\n\r]/.test(w)) {
           return '"' + w.replace(/"/g, '""') + '"';
