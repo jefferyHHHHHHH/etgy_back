@@ -12,6 +12,13 @@ export interface TokenPayload {
   username: string; // for convenience
 }
 
+export interface WechatBindTokenPayload {
+  purpose: 'wechat_mp_bind';
+  appId: string;
+  openId: string;
+  unionId?: string;
+}
+
 export const generateToken = (payload: TokenPayload): string => {
   return jwt.sign({ ...payload }, JWT_SECRET, {
     expiresIn: JWT_EXPIRES_IN,
@@ -20,6 +27,20 @@ export const generateToken = (payload: TokenPayload): string => {
 
 export const verifyToken = (token: string): TokenPayload => {
   return jwt.verify(token, JWT_SECRET) as TokenPayload;
+};
+
+export const generateWechatBindToken = (payload: Omit<WechatBindTokenPayload, 'purpose'>): string => {
+  return jwt.sign({ purpose: 'wechat_mp_bind', ...payload }, JWT_SECRET, {
+    expiresIn: env.WECHAT_MP_BIND_TOKEN_EXPIRE_SECONDS,
+  } as jwt.SignOptions);
+};
+
+export const verifyWechatBindToken = (token: string): WechatBindTokenPayload => {
+  const decoded = jwt.verify(token, JWT_SECRET) as Partial<WechatBindTokenPayload>;
+  if (decoded.purpose !== 'wechat_mp_bind' || !decoded.appId || !decoded.openId) {
+    throw new Error('Invalid bind token');
+  }
+  return decoded as WechatBindTokenPayload;
 };
 
 export const getTokenTtlSeconds = (token: string): number => {

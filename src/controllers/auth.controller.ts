@@ -4,6 +4,7 @@ import { AuthService } from '../services/auth.service';
 import { UserRole } from '../types/enums';
 import redisClient from '../config/redis';
 import { getTokenTtlSeconds } from '../utils/token';
+import { HttpError } from '../utils/httpError';
 
 export class AuthController {
   static async login(req: Request, res: Response) {
@@ -61,6 +62,40 @@ export class AuthController {
     } catch (error) {
       // Fail-open: client can discard token even if we cannot blacklist.
       return res.json({ code: 200, message: 'Logout success (blacklist unavailable)' });
+    }
+  }
+
+  static async wechatMiniProgramLogin(req: Request, res: Response) {
+    try {
+      const { code } = req.body ?? {};
+      const data = await AuthService.wechatMiniProgramLogin(String(code ?? ''));
+      return res.json({
+        code: 200,
+        message: 'OK',
+        data,
+      });
+    } catch (error: any) {
+      const statusCode = error instanceof HttpError ? error.statusCode : 400;
+      return res.status(statusCode).json({ code: statusCode, message: error.message || 'WeChat login failed' });
+    }
+  }
+
+  static async wechatMiniProgramBind(req: Request, res: Response) {
+    try {
+      const { bindToken, username, password } = req.body ?? {};
+      const result = await AuthService.wechatMiniProgramBind({
+        bindToken: String(bindToken ?? ''),
+        username: String(username ?? ''),
+        password: String(password ?? ''),
+      });
+      return res.json({
+        code: 200,
+        message: 'OK',
+        data: result,
+      });
+    } catch (error: any) {
+      const statusCode = error instanceof HttpError ? error.statusCode : 400;
+      return res.status(statusCode).json({ code: statusCode, message: error.message || 'WeChat bind failed' });
     }
   }
 }

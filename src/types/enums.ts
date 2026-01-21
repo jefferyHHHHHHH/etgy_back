@@ -8,4 +8,5 @@ export {
   AuditAction,
   CommentStatus,
   LiveMessageType,
+  WechatProvider,
 } from '@prisma/client';

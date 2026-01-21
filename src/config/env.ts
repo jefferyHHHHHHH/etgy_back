@@ -38,6 +38,11 @@ const envSchema = z.object({
   AGORA_APP_ID: z.string().optional(),
   AGORA_APP_CERTIFICATE: z.string().optional(),
   AGORA_RTC_TOKEN_EXPIRE_SECONDS: z.coerce.number().int().positive().default(3600),
+
+  // WeChat Mini Program (optional; required only when using WeChat mini program login/bind endpoints)
+  WECHAT_MP_APP_ID: z.string().optional(),
+  WECHAT_MP_APP_SECRET: z.string().optional(),
+  WECHAT_MP_BIND_TOKEN_EXPIRE_SECONDS: z.coerce.number().int().positive().default(600),
 });
 
 export const env = envSchema.parse(process.env);

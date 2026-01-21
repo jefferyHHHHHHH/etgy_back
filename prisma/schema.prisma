@@ -24,6 +24,10 @@ enum UserStatus {
   SUSPENDED // Banned
 }
 
+enum WechatProvider {
+  MINI_PROGRAM
+}
+
 model User {
   id           Int        @id @default(autoincrement())
   username     String     @unique // Child: generated name, Volunteer: studentId/email
@@ -47,6 +51,26 @@ model User {
   videoComments     VideoComment[]    @relation("UserVideoComments")
   videoWatchLogs    VideoWatchLog[]   @relation("UserVideoWatchLogs")
   liveMessages      LiveMessage[]     @relation("UserLiveMessages")
+
+  // WeChat bindings
+  wechatAccounts    WechatAccount[]
+}
+
+model WechatAccount {
+  id        Int           @id @default(autoincrement())
+  provider  WechatProvider
+  appId     String
+  openId    String
+  unionId   String?
+
+  userId    Int
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@unique([provider, appId, openId])
+  @@index([userId])
 }
 
 enum Gender {

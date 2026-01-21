@@ -20,6 +20,28 @@ const registerBodySchema = z.object({
 	role: z.nativeEnum(UserRole).describe('注册角色（开发辅助）'),
 });
 
+const wechatMiniProgramLoginBodySchema = z.object({
+	code: z.string().min(1).describe('小程序 wx.login 获取的 code（临时票据）'),
+});
+
+const wechatMiniProgramBindBodySchema = z.object({
+	bindToken: z.string().min(1).describe('微信登录未绑定时返回的 bindToken（短期有效）'),
+	username: z.string().min(1).describe('要绑定的系统账号（儿童）用户名'),
+	password: z.string().min(1).describe('要绑定的系统账号密码'),
+});
+
+const wechatMiniProgramLoginResponseSchema = z.union([
+	z.object({
+		bindRequired: z.literal(true),
+		bindToken: z.string(),
+	}),
+	z.object({
+		bindRequired: z.literal(false),
+		token: z.string(),
+		user: z.any(),
+	}),
+]);
+
 // OpenAPI registration
 registerPath({
 	method: 'post',
@@ -81,6 +103,58 @@ registerPath({
 	},
 });
 
+registerPath({
+	method: 'post',
+	path: '/api/auth/wechat/mini-program/login',
+	summary: '微信小程序登录（code 换 openid；已绑定则直接返回 JWT）',
+	tags: ['Auth'],
+	request: {
+		body: {
+			content: {
+				'application/json': {
+					schema: wechatMiniProgramLoginBodySchema,
+				},
+			},
+		},
+	},
+	responses: {
+		200: {
+			description: 'OK',
+			content: { 'application/json': { schema: apiResponse(wechatMiniProgramLoginResponseSchema) } },
+		},
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		409: { description: 'Conflict', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		502: { description: 'Bad Gateway', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/auth/wechat/mini-program/bind',
+	summary: '微信小程序绑定（用 bindToken + 账号密码绑定到儿童账号）',
+	tags: ['Auth'],
+	request: {
+		body: {
+			content: {
+				'application/json': {
+					schema: wechatMiniProgramBindBodySchema,
+				},
+			},
+		},
+	},
+	responses: {
+		200: {
+			description: 'OK',
+			content: { 'application/json': { schema: apiResponse(z.object({ token: z.string(), user: z.any() })) } },
+		},
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		409: { description: 'Conflict', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		502: { description: 'Bad Gateway', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
 // Beginner-friendly messages (browser address bar uses GET)
 router.get('/login', (req, res) => {
 	res.status(405).json({
@@ -111,5 +185,11 @@ router.post('/register', validateBody(registerBodySchema), AuthController.regist
 
 // POST /api/auth/logout
 router.post('/logout', authMiddleware, AuthController.logout);
+
+// POST /api/auth/wechat/mini-program/login
+router.post('/wechat/mini-program/login', validateBody(wechatMiniProgramLoginBodySchema), AuthController.wechatMiniProgramLogin);
+
+// POST /api/auth/wechat/mini-program/bind
+router.post('/wechat/mini-program/bind', validateBody(wechatMiniProgramBindBodySchema), AuthController.wechatMiniProgramBind);
 
 export default router;
