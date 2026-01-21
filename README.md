@@ -121,6 +121,25 @@
 
 提示：Swagger UI 默认在 `http://<host>:<port>/api/docs/`。
 
+### 5.5 微信小程序登录绑定（MVP）
+
+本项目提供微信小程序端的“登录 + 账号绑定”最小闭环：
+
+1) 小程序调用 `wx.login()` 获取 `code`
+2) 请求后端 `POST /api/auth/wechat/mini-program/login`
+  - 若已绑定：直接返回 `token + user`
+  - 若未绑定：返回 `bindToken`（短期有效）
+3) 前端引导用户输入“系统账号密码”（当前版本仅允许儿童账号），调用 `POST /api/auth/wechat/mini-program/bind` 完成绑定并获取 `token`
+
+需要在后端 `.env` 配置：
+- `WECHAT_MP_APP_ID`
+- `WECHAT_MP_APP_SECRET`
+- `WECHAT_MP_BIND_TOKEN_EXPIRE_SECONDS`（可选，默认 600 秒）
+
+备注：
+- `bindToken` 是后端签发的短期 JWT，仅用于一次绑定流程，不等同于登录态。
+- 绑定关系存储在 Prisma 模型 `WechatAccount` 中（provider=MINI_PROGRAM）。
+
 ### 5.2 常用脚本
 
 - **启动开发环境**: `npm run dev` (使用 `nodemon` 热重载)

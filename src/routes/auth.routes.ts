@@ -108,6 +108,11 @@ registerPath({
 	path: '/api/auth/wechat/mini-program/login',
 	summary: '微信小程序登录（code 换 openid；已绑定则直接返回 JWT）',
 	tags: ['Auth'],
+	description:
+		'小程序端调用 wx.login() 获取 code 后调用此接口。\n\n' +
+		'- 若 openid 已绑定：返回 { bindRequired: false, token, user }\n' +
+		'- 若 openid 未绑定：返回 { bindRequired: true, bindToken }（短期有效，用于后续绑定）\n\n' +
+		'注意：需在后端配置 WECHAT_MP_APP_ID / WECHAT_MP_APP_SECRET 才会真实请求微信 jscode2session。',
 	request: {
 		body: {
 			content: {
@@ -133,6 +138,9 @@ registerPath({
 	path: '/api/auth/wechat/mini-program/bind',
 	summary: '微信小程序绑定（用 bindToken + 账号密码绑定到儿童账号）',
 	tags: ['Auth'],
+	description:
+		'当 /login 返回 bindRequired=true 时，用 bindToken + 系统账号密码完成绑定。\n\n' +
+		'当前版本为 MVP 规则：仅允许绑定到 CHILD（儿童）账号。绑定成功后会返回 JWT（等同一次登录）。',
 	request: {
 		body: {
 			content: {
