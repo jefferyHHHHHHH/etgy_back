@@ -2,6 +2,7 @@ import { prisma } from '../config/prisma';
 import { AuditAction, LiveMessageType, LiveStatus, UserRole } from '../types/enums';
 import { AuditService } from './audit.service';
 import { HttpError } from '../utils/httpError';
+import { ModerationService } from './moderation.service';
 import { env } from '../config/env';
 import { RtcTokenBuilder, RtcRole } from 'agora-token';
 
@@ -614,12 +615,18 @@ export class LiveService {
 
     const type = params.type ?? LiveMessageType.CHAT;
 
+    const moderated = await ModerationService.moderateOrThrow({
+      scene: type === LiveMessageType.QA ? 'live_qa' : 'live_chat',
+      text,
+      enabledCheck: type === LiveMessageType.CHAT ? 'liveChat' : undefined,
+    });
+
     const created = await prisma.liveMessage.create({
       data: {
         liveId: params.liveId,
         senderId: params.senderId,
         type,
-        content: text,
+        content: moderated.text,
       },
       include: {
         sender: { select: { id: true, username: true, role: true, childProfile: true } },

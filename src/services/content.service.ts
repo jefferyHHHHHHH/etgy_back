@@ -2,6 +2,7 @@ import { prisma } from '../config/prisma';
 import { AuditAction, CommentStatus, UserRole, VideoStatus } from '../types/enums';
 import { AuditService } from './audit.service';
 import { HttpError } from '../utils/httpError';
+import { ModerationService } from './moderation.service';
 
 export class ContentService {
   
@@ -596,11 +597,17 @@ export class ContentService {
     const text = (content ?? '').trim();
     if (!text) throw new HttpError(400, 'content is required');
 
+    const moderated = await ModerationService.moderateOrThrow({
+      scene: 'video_comment',
+      text,
+      enabledCheck: 'comments',
+    });
+
     const created = await prisma.videoComment.create({
       data: {
         videoId,
         authorId: userId,
-        content: text,
+        content: moderated.text,
         status: CommentStatus.PENDING,
       },
       include: { author: { select: { id: true, username: true, role: true, childProfile: true } } },
