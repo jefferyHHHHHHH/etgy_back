@@ -233,6 +233,100 @@ export class UserService {
     });
   }
 
+  /**
+   * Batch create volunteers (admin provisioning).
+   * collegeId is forced by controller for college admin.
+   */
+  static async createVolunteersBatch(
+    collegeId: number,
+    items: Array<{
+      username: string;
+      password: string;
+      realName: string;
+      studentId: string;
+      phone?: string;
+      status?: UserStatus;
+    }>
+  ) {
+    const results: Array<
+      | { ok: true; username: string; userId: number }
+      | { ok: false; username: string; message: string }
+    > = [];
+
+    const college = await prisma.college.findUnique({ where: { id: collegeId } });
+    if (!college) throw new HttpError(400, 'Invalid collegeId');
+
+    for (const item of items) {
+      const username = (item.username ?? '').trim();
+      if (!username) {
+        results.push({ ok: false, username: item.username, message: 'username is required' });
+        continue;
+      }
+      if (!item.password || item.password.length < 6) {
+        results.push({ ok: false, username, message: 'password must be at least 6 chars' });
+        continue;
+      }
+      if (!item.realName?.trim()) {
+        results.push({ ok: false, username, message: 'realName is required' });
+        continue;
+      }
+      if (!item.studentId?.trim()) {
+        results.push({ ok: false, username, message: 'studentId is required' });
+        continue;
+      }
+
+      try {
+        const existing = await prisma.user.findUnique({ where: { username } });
+        if (existing) {
+          results.push({ ok: false, username, message: 'Username already exists' });
+          continue;
+        }
+
+        const existingStudent = await prisma.volunteerProfile.findFirst({
+          where: {
+            collegeId,
+            studentId: item.studentId.trim(),
+          },
+          select: { userId: true },
+        });
+        if (existingStudent) {
+          results.push({ ok: false, username, message: 'studentId already exists in this college' });
+          continue;
+        }
+
+        const passwordHash = await bcrypt.hash(item.password, 10);
+        const created = await prisma.user.create({
+          data: {
+            username,
+            passwordHash,
+            role: UserRole.VOLUNTEER,
+            status: item.status ?? UserStatus.ACTIVE,
+            volunteerProfile: {
+              create: {
+                realName: item.realName.trim(),
+                studentId: item.studentId.trim(),
+                collegeId,
+                phone: item.phone,
+                status: VolunteerStatus.IN_SCHOOL,
+              },
+            },
+          },
+          select: { id: true, username: true },
+        });
+        results.push({ ok: true, username: created.username, userId: created.id });
+      } catch (e: any) {
+        results.push({ ok: false, username, message: e?.message || 'create failed' });
+      }
+    }
+
+    return {
+      total: items.length,
+      success: results.filter((r) => r.ok).length,
+      failed: results.filter((r) => !r.ok).length,
+      results,
+    };
+  }
+
   static async changePassword(userId: number, oldPassword: string, newPassword: string) {
     if (!newPassword || newPassword.length < 6) throw new HttpError(400, 'newPassword must be at least 6 chars');
 

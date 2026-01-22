@@ -4,6 +4,7 @@ import { UserService } from '../services/user.service';
 import { UserRole, UserStatus, VolunteerStatus } from '../types/enums';
 import { HttpError } from '../utils/httpError';
 import { parseChildrenExcel } from '../utils/childrenExcel';
+import { parseVolunteersExcel } from '../utils/volunteersExcel';
 import * as XLSX from 'xlsx';
 
 export class UserController {
@@ -136,6 +137,99 @@ export class UserController {
         'Content-Disposition',
         'attachment; filename="children-import-template.xlsx"'
       );
+      return res.status(200).send(buf);
+    } catch (error: any) {
+      return res.status(500).json({ code: 500, message: error?.message || 'Internal Server Error' });
+    }
+  }
+
+  static async createVolunteersBatchExcel(req: Request, res: Response) {
+    try {
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ code: 400, message: 'file is required (multipart field name: file)' });
+      }
+
+      const user = req.user!;
+      let collegeId: number;
+
+      if (user.role === UserRole.COLLEGE_ADMIN) {
+        const profile = await UserService.getUserProfile(user.userId);
+        const forcedCollegeId = profile?.adminProfile?.collegeId;
+        if (!forcedCollegeId) {
+          return res.status(400).json({ code: 400, message: 'Admin must belong to a college' });
+        }
+        collegeId = forcedCollegeId;
+      } else if (user.role === UserRole.PLATFORM_ADMIN) {
+        const q = (req.query.collegeId ?? req.body?.collegeId) as any;
+        const parsedCollegeId = Number(q);
+        if (!parsedCollegeId || Number.isNaN(parsedCollegeId)) {
+          return res.status(400).json({ code: 400, message: 'collegeId is required for platform admin' });
+        }
+        collegeId = parsedCollegeId;
+      } else {
+        return res.status(403).json({ code: 403, message: 'Forbidden' });
+      }
+
+      const parsed = parseVolunteersExcel(file.buffer);
+      const created = await UserService.createVolunteersBatch(collegeId, parsed.valid.map((v) => v.item));
+
+      const results = [
+        ...parsed.invalid.map((r) => ({ rowNumber: r.rowNumber, ok: false as const, username: r.username, message: r.message })),
+        ...created.results.map((r, idx) => ({ rowNumber: parsed.valid[idx]!.rowNumber, ...r })),
+      ].sort((a, b) => a.rowNumber - b.rowNumber);
+
+      const success = created.success;
+      const total = parsed.totalRows;
+      const failed = total - success;
+
+      return res.status(201).json({
+        code: 201,
+        message: 'Batch complete',
+        data: {
+          total,
+          success,
+          failed,
+          results,
+        },
+      });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error?.message || 'Bad Request' });
+    }
+  }
+
+  static async downloadVolunteersBatchExcelTemplate(req: Request, res: Response) {
+    try {
+      // Sheet1: template header only
+      const templateRows = [['登录账号', '初始密码', '姓名', '学号', '手机号（可选）']];
+      const wsTemplate = XLSX.utils.aoa_to_sheet(templateRows);
+      (wsTemplate as any)['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 18 }];
+
+      // Sheet2: notes & example
+      const noteRows = [
+        ['注意事项（请不要修改“导入模板”工作表的表头；系统只读取第 1 个工作表）'],
+        ['1）必填列：登录账号、初始密码、姓名、学号；手机号可不填'],
+        ['2）初始密码长度至少 6 位；登录账号在系统中必须唯一'],
+        ['3）学号在同一学院内不得重复'],
+        [],
+        ['示例表格（仅示例，不会被导入）'],
+        ['登录账号', '初始密码', '姓名', '学号', '手机号（可选）'],
+        ['20210001', 'Passw0rd!', '张三', '20210001', '13800000000'],
+        ['20210002', 'Passw0rd!', '李四', '20210002', ''],
+      ];
+      const wsNotes = XLSX.utils.aoa_to_sheet(noteRows);
+      (wsNotes as any)['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 18 }];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, wsTemplate, '导入模板');
+      XLSX.utils.book_append_sheet(wb, wsNotes, '注意事项');
+      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename="volunteers-import-template.xlsx"');
       return res.status(200).send(buf);
     } catch (error: any) {
       return res.status(500).json({ code: 500, message: error?.message || 'Internal Server Error' });
