@@ -9,6 +9,7 @@
     "db:seed": "ts-node --files prisma/seed.ts",
     "build": "tsc",
     "smoke:moderation": "node -e \"require('ts-node').register({ files: true }); require('./scripts/moderation-smoke.ts');\"",
+    "smoke:ai-tutor": "node -e \"require('ts-node').register({ files: true }); require('./scripts/ai-tutor-smoke.ts');\"",
     "start": "node dist/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

@@ -6,9 +6,19 @@ import liveModule from './live/live.module';
 import metaModule from './meta/meta.module';
 import platformModule from './platform/platform.module';
 import ossModule from './oss/oss.module';
+import aiModule from './ai/ai.module';
 import type { AppModule } from './types';
 
-const modules: AppModule[] = [authModule, usersModule, videosModule, liveModule, metaModule, platformModule, ossModule];
+const modules: AppModule[] = [
+	authModule,
+	usersModule,
+	videosModule,
+	liveModule,
+	metaModule,
+	platformModule,
+	ossModule,
+	aiModule,
+];
 
 export const registerModules = (app: Express) => {
 	for (const mod of modules) {

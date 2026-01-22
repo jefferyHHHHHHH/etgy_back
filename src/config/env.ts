@@ -43,6 +43,25 @@ const envSchema = z.object({
   WECHAT_MP_APP_ID: z.string().optional(),
   WECHAT_MP_APP_SECRET: z.string().optional(),
   WECHAT_MP_BIND_TOKEN_EXPIRE_SECONDS: z.coerce.number().int().positive().default(600),
+
+  // iFlytek Spark (讯飞星火) (optional)
+  // HTTP OpenAPI: Authorization: Bearer <SPARK_HTTP_API_PASSWORD>
+  SPARK_HTTP_ENDPOINT: z.string().url().optional().default('https://spark-api-open.xf-yun.com/v2/chat/completions'),
+  SPARK_HTTP_API_PASSWORD: z.string().optional(),
+  // Spark X1.5 is exposed via Ultra model in HTTP OpenAPI (official docs: 4.0Ultra)
+  SPARK_HTTP_MODEL: z.string().optional().default('4.0Ultra'),
+
+  // WebSocket (signed URL auth)
+  SPARK_WS_URL: z.string().url().optional().default('wss://spark-api.xf-yun.com/v1/x1'),
+  SPARK_WS_APP_ID: z.string().optional(),
+  SPARK_WS_API_KEY: z.string().optional(),
+  SPARK_WS_API_SECRET: z.string().optional(),
+
+  // AI tutor (child coaching)
+  AI_TUTOR_ENABLED: z.coerce.boolean().default(true),
+  AI_TUTOR_DAILY_LIMIT: z.coerce.number().int().min(1).default(5),
+  AI_TUTOR_MAX_INPUT_LENGTH: z.coerce.number().int().min(20).max(2000).default(200),
+  AI_TUTOR_CONTEXT_MESSAGES: z.coerce.number().int().min(0).max(50).default(8),
 });
 
 export const env = envSchema.parse(process.env);

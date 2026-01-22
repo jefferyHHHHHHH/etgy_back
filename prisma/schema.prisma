@@ -54,6 +54,11 @@ model User {
 
   // WeChat bindings
   wechatAccounts    WechatAccount[]
+
+  // AI tutor
+  aiConversations        AiConversation[]
+  aiRiskAlerts           AiRiskAlert[]     @relation("AiRiskAlertUser")
+  aiRiskAlertsHandled    AiRiskAlert[]     @relation("AiRiskAlertHandledBy")
 }
 
 model WechatAccount {
@@ -86,6 +91,12 @@ model ChildProfile {
   school   String
   grade    String
   gender   Gender @default(UNKNOWN)
+
+  // Optional association to a college for "本学院数据隔离" / risk notification routing.
+  collegeId Int?
+  college   College? @relation(fields: [collegeId], references: [id])
+
+  @@index([collegeId])
 }
 
 enum VolunteerStatus {
@@ -126,10 +137,14 @@ model College {
   updatedAt   DateTime @updatedAt
 
   // Relations
+  children    ChildProfile[]
   volunteers  VolunteerProfile[]
   admins      AdminProfile[]
   videos      Video[]
   liveRooms   LiveRoom[]
+
+  // AI tutor
+  aiRiskAlerts AiRiskAlert[]
 }
 
 // -----------------------------------------------------------------------------
@@ -384,5 +399,89 @@ model SensitiveWord {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+
+// -----------------------------------------------------------------------------
+// AI Tutor Domain (Child AI coaching + safety alerts)
+// -----------------------------------------------------------------------------
+
+enum AiTutorMode {
+  STUDY
+  EMOTION
+}
+
+enum AiMessageRole {
+  SYSTEM
+  USER
+  ASSISTANT
+}
+
+enum AiRiskSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum AiRiskStatus {
+  OPEN
+  HANDLED
+}
+
+model AiConversation {
+  id        Int         @id @default(autoincrement())
+  userId    Int
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mode      AiTutorMode
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  messages  AiMessage[]
+  riskAlerts AiRiskAlert[]
+
+  @@index([userId, updatedAt])
+}
+
+model AiMessage {
+  id             Int            @id @default(autoincrement())
+  conversationId Int
+  conversation   AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           AiMessageRole
+  content        String         @db.Text
+  createdAt      DateTime       @default(now())
+
+  @@index([conversationId, id])
+}
+
+model AiRiskAlert {
+  id              Int            @id @default(autoincrement())
+  conversationId  Int
+  conversation    AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  userId          Int
+  user            User           @relation("AiRiskAlertUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Optional routing target (if child profile is linked to a college)
+  collegeId       Int?
+  college         College?       @relation(fields: [collegeId], references: [id])
+
+  mode            AiTutorMode
+  severity        AiRiskSeverity @default(HIGH)
+  riskType        String
+  inputText       String         @db.Text
+  matchedKeywords String?        @db.Text
+
+  status          AiRiskStatus   @default(OPEN)
+  handledAt       DateTime?
+  handledBy       Int?
+  handledByUser   User?          @relation("AiRiskAlertHandledBy", fields: [handledBy], references: [id])
+  handleNote      String?        @db.Text
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([status, createdAt])
+  @@index([collegeId, status, createdAt])
+  @@index([userId, createdAt])
 }
 

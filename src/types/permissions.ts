@@ -37,6 +37,10 @@ export enum Permission {
   // Content moderation (policy switches + sensitive words)
   CONTENT_POLICY_MANAGE = 'contentPolicy.manage',
 
+  // AI tutor (child coaching) safety alerts
+  AI_RISK_VIEW = 'aiRisk.view',
+  AI_RISK_HANDLE = 'aiRisk.handle',
+
   // Live
   LIVE_CREATE = 'live.create',
   LIVE_SUBMIT = 'live.submit',
@@ -61,6 +65,8 @@ export const rolePermissions: Record<UserRole, Set<Permission>> = {
   [UserRole.COLLEGE_ADMIN]: new Set<Permission>([
     Permission.DASHBOARD_VIEW,
     Permission.AUDIT_VIEW,
+    Permission.AI_RISK_VIEW,
+    Permission.AI_RISK_HANDLE,
     Permission.USER_VOLUNTEER_CREATE,
     Permission.USER_VOLUNTEER_MANAGE,
     Permission.VIDEO_REVIEW,
@@ -73,6 +79,8 @@ export const rolePermissions: Record<UserRole, Set<Permission>> = {
   [UserRole.PLATFORM_ADMIN]: new Set<Permission>([
     Permission.DASHBOARD_VIEW,
     Permission.AUDIT_VIEW,
+    Permission.AI_RISK_VIEW,
+    Permission.AI_RISK_HANDLE,
     Permission.COLLEGE_MANAGE,
     Permission.USER_CHILD_CREATE,
     Permission.USER_CHILD_VIEW,

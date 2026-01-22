@@ -136,6 +136,47 @@
 - `WECHAT_MP_APP_SECRET`
 - `WECHAT_MP_BIND_TOKEN_EXPIRE_SECONDS`（可选，默认 600 秒）
 
+### 5.7 讯飞星火 Spark X1.5（可选）
+
+本项目已预留 Spark 调用的环境变量与 Service 封装（HTTP + WebSocket）。
+
+HTTP OpenAPI（推荐，OpenAI 兼容的 `chat/completions`）：
+- `SPARK_HTTP_ENDPOINT`（默认 `https://spark-api-open.xf-yun.com/v2/chat/completions`）
+- `SPARK_HTTP_API_PASSWORD`（HTTP 服务接口认证信息中的 `APIPassword`，用于 `Authorization: Bearer ...`）
+- `SPARK_HTTP_MODEL`（默认 `4.0Ultra`；官方说明 Ultra 已升级至 X1.5 快思考模式）
+
+WebSocket（需要签名 URL）：
+- `SPARK_WS_URL`（默认 `wss://spark-api.xf-yun.com/v1/x1`）
+- `SPARK_WS_APP_ID` / `SPARK_WS_API_KEY` / `SPARK_WS_API_SECRET`
+
+提示：示例配置见 `.env.example`，真实密钥只放在本机 `.env`，不要提交到 git。
+
+### 5.8 AI 辅导（落实 PRD：学习问题/情绪倾诉 + 风控告警）
+
+本项目已实现“儿童 AI 辅导”最小闭环：
+
+- **儿童对话**：限制每日次数、单次输入长度；命中高风险（自伤/极端暴力等）会返回预定义安全回应并生成告警。
+- **会话历史**：保存对话消息，供客户端拉取展示。
+- **风险告警**：学院/平台管理员可查看并标记处理（用于 PRD 的“自动通知学院”链路 MVP 落地）。
+
+首次使用需要同步数据库与 Prisma Client：
+- `npm run db:generate`
+- `npm run db:push`
+
+儿童端接口：
+- `POST /api/ai/tutor/chat`（body: `{ mode: 'study'|'emotion', message, conversationId? }`）
+- `GET /api/ai/tutor/conversations`
+- `GET /api/ai/tutor/conversations/:id`
+
+管理员端接口（需要角色 + 权限 `aiRisk.view/aiRisk.handle`）：
+- `GET /api/ai/risk-alerts`（学院管理员只看本学院；平台管理员可选 `collegeId` 筛选）
+- `PATCH /api/ai/risk-alerts/:id/handle`
+
+配置项：
+- `AI_TUTOR_ENABLED` / `AI_TUTOR_DAILY_LIMIT` / `AI_TUTOR_MAX_INPUT_LENGTH` / `AI_TUTOR_CONTEXT_MESSAGES`
+
+说明：为实现“本学院告警可见”，`ChildProfile.collegeId` 已新增为可选字段；若未填写，告警默认只在平台侧可见。
+
 备注：
 - `bindToken` 是后端签发的短期 JWT，仅用于一次绑定流程，不等同于登录态。
 - 绑定关系存储在 Prisma 模型 `WechatAccount` 中（provider=MINI_PROGRAM）。

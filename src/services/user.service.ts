@@ -47,6 +47,7 @@ export class UserService {
     school: string;
     grade: string;
     gender: Gender;
+    collegeId?: number;
     status?: UserStatus;
   }) {
     const username = data.username.trim();
@@ -54,6 +55,11 @@ export class UserService {
     if (!data.password || data.password.length < 6) throw new HttpError(400, 'password must be at least 6 chars');
 
     const passwordHash = await bcrypt.hash(data.password, 10);
+
+    if (typeof data.collegeId === 'number') {
+      const college = await prisma.college.findUnique({ where: { id: data.collegeId } });
+      if (!college) throw new HttpError(400, 'Invalid collegeId');
+    }
 
     const user = await prisma.user.create({
       data: {
@@ -67,6 +73,7 @@ export class UserService {
             school: data.school, 
             grade: data.grade,
             gender: data.gender,
+            ...(typeof data.collegeId === 'number' ? { collegeId: data.collegeId } : {}),
           }
         }
       },
@@ -86,6 +93,7 @@ export class UserService {
     school: string;
     grade: string;
     gender: Gender;
+    collegeId?: number;
     status?: UserStatus;
   }>) {
     const results: Array<
@@ -100,6 +108,10 @@ export class UserService {
         continue;
       }
       try {
+        if (typeof item.collegeId === 'number') {
+          const college = await prisma.college.findUnique({ where: { id: item.collegeId } });
+          if (!college) throw new HttpError(400, 'Invalid collegeId');
+        }
         const passwordHash = await bcrypt.hash(item.password, 10);
         const created = await prisma.user.create({
           data: {
@@ -113,6 +125,7 @@ export class UserService {
                 school: item.school,
                 grade: item.grade,
                 gender: item.gender,
+                ...(typeof item.collegeId === 'number' ? { collegeId: item.collegeId } : {}),
               },
             },
           },
