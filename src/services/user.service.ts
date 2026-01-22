@@ -149,22 +149,25 @@ export class UserService {
 
     const where: any = {
       role: UserRole.CHILD,
-      childProfile: {
-        isNot: null,
-      },
     };
+
+    const childProfileIs: any = {};
+    if (school) childProfileIs.school = { contains: school };
+    if (grade) childProfileIs.grade = { contains: grade };
+
+    if (Object.keys(childProfileIs).length > 0) {
+      // When filtering by profile fields, use relation filter `is:`.
+      where.childProfile = { is: childProfileIs };
+    } else {
+      // Otherwise, just ensure profile exists.
+      where.childProfile = { isNot: null };
+    }
 
     if (search) {
       where.OR = [
         { username: { contains: search } },
-        { childProfile: { realName: { contains: search } } },
+        { childProfile: { is: { realName: { contains: search } } } },
       ];
-    }
-    if (school) {
-      where.childProfile = { ...(where.childProfile ?? {}), school: { contains: school } };
-    }
-    if (grade) {
-      where.childProfile = { ...(where.childProfile ?? {}), grade: { contains: grade } };
     }
 
     const [total, items] = await Promise.all([
