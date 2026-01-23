@@ -113,6 +113,7 @@ model VolunteerProfile {
   collegeId Int
   college   College         @relation(fields: [collegeId], references: [id])
   phone     String?
+  gender    Gender          @default(UNKNOWN)
   status    VolunteerStatus @default(IN_SCHOOL)
 
   // Content Relations

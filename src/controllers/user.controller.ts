@@ -315,6 +315,7 @@ export class UserController {
         studentId: req.body.studentId,
         collegeId,
         phone: req.body.phone,
+		gender: req.body.gender,
       });
 
       return res.status(201).json({ code: 201, message: 'Volunteer created', data: created });

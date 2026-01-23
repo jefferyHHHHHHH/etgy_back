@@ -102,6 +102,7 @@ const createVolunteerAccountBodySchema = z.object({
 	studentId: z.string().min(1),
 	collegeId: z.coerce.number().int().positive().optional().describe('仅平台管理员创建时需要传；学院管理员会被强制使用自身学院'),
 	phone: z.string().optional(),
+	gender: z.nativeEnum(Gender).optional().describe('性别（不传默认 UNKNOWN）'),
 });
 
 const changePasswordBodySchema = z.object({

@@ -212,6 +212,7 @@ export class UserService {
     studentId: string;
     collegeId: number;
     phone?: string;
+    gender?: Gender;
     status?: UserStatus;
   }) {
     const username = params.username.trim();
@@ -239,6 +240,7 @@ export class UserService {
             studentId: params.studentId.trim(),
             collegeId: params.collegeId,
             phone: params.phone,
+            gender: params.gender ?? Gender.UNKNOWN,
             status: VolunteerStatus.IN_SCHOOL,
           },
         },
@@ -369,6 +371,7 @@ export class UserService {
     studentId: string;
     collegeId: number;
     phone: string;
+    gender?: Gender;
   }) {
     const college = await prisma.college.findUnique({ where: { id: data.collegeId } });
     if (!college) throw new Error('Invalid College ID');
@@ -381,6 +384,7 @@ export class UserService {
         studentId: data.studentId,
         collegeId: data.collegeId,
         phone: data.phone,
+        gender: data.gender ?? Gender.UNKNOWN,
         status: VolunteerStatus.IN_SCHOOL
       }
     });
