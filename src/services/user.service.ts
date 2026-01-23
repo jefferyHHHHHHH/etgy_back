@@ -22,7 +22,7 @@ export class UserService {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
-        childProfile: true,
+        childProfile: { include: { college: true } },
         volunteerProfile: {
           include: { college: true }
         },
