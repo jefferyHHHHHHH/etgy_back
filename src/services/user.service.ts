@@ -262,6 +262,7 @@ export class UserService {
       password: string;
       realName: string;
       studentId: string;
+      gender?: Gender;
       phone?: string;
       status?: UserStatus;
     }>
@@ -325,6 +326,7 @@ export class UserService {
                 studentId: item.studentId.trim(),
                 collegeId,
                 phone: item.phone,
+                gender: item.gender ?? Gender.UNKNOWN,
                 status: VolunteerStatus.IN_SCHOOL,
               },
             },

@@ -204,24 +204,25 @@ export class UserController {
   static async downloadVolunteersBatchExcelTemplate(req: Request, res: Response) {
     try {
       // Sheet1: template header only
-      const templateRows = [['登录账号', '初始密码', '姓名', '学号', '手机号（可选）']];
+	  const templateRows = [['登录账号', '初始密码', '姓名', '学号', '性别（可选）', '手机号（可选）']];
       const wsTemplate = XLSX.utils.aoa_to_sheet(templateRows);
-      (wsTemplate as any)['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 18 }];
+	  (wsTemplate as any)['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 18 }];
 
       // Sheet2: notes & example
       const noteRows = [
         ['注意事项（请不要修改“导入模板”工作表的表头；系统只读取第 1 个工作表）'],
-        ['1）必填列：登录账号、初始密码、姓名、学号；手机号可不填'],
+    ['1）必填列：登录账号、初始密码、姓名、学号；性别/手机号可不填'],
         ['2）初始密码长度至少 6 位；登录账号在系统中必须唯一'],
         ['3）学号在同一学院内不得重复'],
+    ['4）性别可填：男 / 女 / 未知（不填默认未知）'],
         [],
         ['示例表格（仅示例，不会被导入）'],
-        ['登录账号', '初始密码', '姓名', '学号', '手机号（可选）'],
-        ['20210001', 'Passw0rd!', '张三', '20210001', '13800000000'],
-        ['20210002', 'Passw0rd!', '李四', '20210002', ''],
+    ['登录账号', '初始密码', '姓名', '学号', '性别（可选）', '手机号（可选）'],
+    ['20210001', 'Passw0rd!', '张三', '20210001', '男', '13800000000'],
+    ['20210002', 'Passw0rd!', '李四', '20210002', '未知', ''],
       ];
       const wsNotes = XLSX.utils.aoa_to_sheet(noteRows);
-      (wsNotes as any)['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 18 }];
+    (wsNotes as any)['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 18 }];
 
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, wsTemplate, '导入模板');

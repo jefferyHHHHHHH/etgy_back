@@ -1,10 +1,12 @@
 import * as XLSX from 'xlsx';
+import { Gender } from '../types/enums';
 
 export type VolunteerCreateItem = {
   username: string;
   password: string;
   realName: string;
   studentId: string;
+  gender?: Gender;
   phone?: string;
 };
 
@@ -14,13 +16,14 @@ export type ParsedVolunteersExcel = {
   invalid: Array<{ rowNumber: number; username: string; message: string }>;
 };
 
-type CanonicalField = 'username' | 'password' | 'realName' | 'studentId' | 'phone';
+type CanonicalField = 'username' | 'password' | 'realName' | 'studentId' | 'gender' | 'phone';
 
 const HEADER_SYNONYMS: Record<CanonicalField, string[]> = {
   username: ['username', 'user name', '用户名', '账号', '登录名', '登录账号'],
   password: ['password', 'pwd', '密码', '初始密码'],
   realName: ['realname', 'real name', 'real_name', '姓名', '真实姓名'],
   studentId: ['studentid', 'student id', 'student_id', '学号'],
+  gender: ['gender', 'sex', '性别'],
   phone: ['phone', 'mobile', '手机号', '联系电话', '联系方式'],
 };
 
@@ -34,6 +37,21 @@ function normalizeHeader(value: unknown): string {
 
 function toStringCell(value: unknown): string {
   return String(value ?? '').trim();
+}
+
+function parseGender(value: unknown): Gender {
+  const s = toStringCell(value).toLowerCase();
+  if (!s) return Gender.UNKNOWN;
+
+  if (['male', 'm', '男', 'man', '1'].includes(s)) return Gender.MALE;
+  if (['female', 'f', '女', 'woman', '0', '2'].includes(s)) return Gender.FEMALE;
+  if (['unknown', 'u', '未知', '不详'].includes(s)) return Gender.UNKNOWN;
+
+  if (s === 'MALE'.toLowerCase()) return Gender.MALE;
+  if (s === 'FEMALE'.toLowerCase()) return Gender.FEMALE;
+  if (s === 'UNKNOWN'.toLowerCase()) return Gender.UNKNOWN;
+
+  return Gender.UNKNOWN;
 }
 
 function pickColumnIndex(headerRow: unknown[], canonical: CanonicalField): number {
@@ -73,6 +91,7 @@ export function parseVolunteersExcel(buffer: Buffer): ParsedVolunteersExcel {
     password: pickColumnIndex(headerRow, 'password'),
     realName: pickColumnIndex(headerRow, 'realName'),
     studentId: pickColumnIndex(headerRow, 'studentId'),
+    gender: pickColumnIndex(headerRow, 'gender'),
     phone: pickColumnIndex(headerRow, 'phone'),
   };
 
@@ -80,7 +99,7 @@ export function parseVolunteersExcel(buffer: Buffer): ParsedVolunteersExcel {
   const missing = required.filter((k) => colIndex[k] < 0);
   if (missing.length > 0) {
     throw new Error(
-      `Excel 模板缺少列：${missing.join(', ')}（支持中文列名：登录账号/初始密码/姓名/学号/手机号）`
+      `Excel 模板缺少列：${missing.join(', ')}（支持中文列名：登录账号/初始密码/姓名/学号/性别/手机号）`
     );
   }
 
@@ -105,6 +124,7 @@ export function parseVolunteersExcel(buffer: Buffer): ParsedVolunteersExcel {
     const password = toStringCell(row[colIndex.password]);
     const realName = toStringCell(row[colIndex.realName]);
     const studentId = toStringCell(row[colIndex.studentId]);
+  	const gender = colIndex.gender >= 0 ? parseGender(row[colIndex.gender]) : Gender.UNKNOWN;
     const rawPhone = colIndex.phone >= 0 ? toStringCell(row[colIndex.phone]) : '';
     const phone = rawPhone ? normalizePhone(rawPhone) : undefined;
 
@@ -147,6 +167,7 @@ export function parseVolunteersExcel(buffer: Buffer): ParsedVolunteersExcel {
         password,
         realName,
         studentId,
+        gender,
         phone,
       },
     });
