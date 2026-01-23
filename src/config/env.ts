@@ -34,6 +34,16 @@ const envSchema = z.object({
   // Docs
   SWAGGER_ENABLED: z.coerce.boolean().default(true),
 
+  // Reverse proxy
+  // When running behind Nginx/Ingress/Cloud LB, enable this so req.ip uses X-Forwarded-For.
+  TRUST_PROXY: z.coerce.boolean().optional(),
+
+  // API rate limit
+  // Applied to /api/* as a coarse safeguard.
+  // Note: In production behind proxies, enable TRUST_PROXY to avoid all clients sharing one IP.
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().optional(),
+  RATE_LIMIT_MAX: z.coerce.number().int().positive().optional(),
+
   // Agora RTC (optional; required only when using Agora token endpoints)
   AGORA_APP_ID: z.string().optional(),
   AGORA_APP_CERTIFICATE: z.string().optional(),

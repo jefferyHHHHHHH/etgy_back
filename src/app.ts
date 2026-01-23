@@ -21,6 +21,12 @@ app.use(requestIdMiddleware);
 app.use(loggerMiddleware);
 const isProd = env.NODE_ENV === 'production';
 
+// If deployed behind a reverse proxy (Nginx/Ingress/Cloud LB), enable trust proxy so
+// req.ip uses X-Forwarded-For. Otherwise all clients may appear as the same IP and
+// get rate-limited together.
+const trustProxy = typeof env.TRUST_PROXY === 'boolean' ? env.TRUST_PROXY : isProd;
+app.set('trust proxy', trustProxy ? 1 : false);
+
 // In development, avoid 304 responses preserving previously cached security headers.
 // This is especially important for Swagger UI when testing via http://<lan-ip>.
 if (!isProd) {
@@ -52,8 +58,8 @@ app.use(cookieParser());
 app.use(
   '/api',
   rateLimit({
-    windowMs: 60 * 1000,
-    limit: 120,
+    windowMs: env.RATE_LIMIT_WINDOW_MS ?? 60 * 1000,
+    limit: env.RATE_LIMIT_MAX ?? (isProd ? 120 : 1000),
     standardHeaders: true,
     legacyHeaders: false,
   })
