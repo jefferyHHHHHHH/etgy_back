@@ -58,6 +58,23 @@ export const dictionaries = {
 			[UserRole.PLATFORM_ADMIN]: '全局配置与兜底风控（可强制下线任何内容）',
 		}
 	),
+	// 学科（用于视频/直播的筛选与元数据填写）
+	subjects: [
+		{ value: '语文', label: '语文' },
+		{ value: '数学', label: '数学' },
+		{ value: '英语', label: '英语' },
+		{ value: '科学', label: '科学' },
+		{ value: '道德与法治', label: '道德与法治' },
+		{ value: '音乐', label: '音乐' },
+		{ value: '美术', label: '美术' },
+		{ value: '体育', label: '体育' },
+		{ value: '信息技术', label: '信息技术' },
+	],
+	// 年级范围（PRD 固定为 2 个值）
+	gradeRanges: [
+		{ value: '1-3', label: '一到三年级' },
+		{ value: '4-6', label: '四到六年级' },
+	],
 	userStatus: buildEnumDictionary(UserStatus, {
 		[UserStatus.ACTIVE]: '已开通',
 		[UserStatus.INACTIVE]: '未开通/未激活',
@@ -139,6 +156,8 @@ export const dictionaries = {
 export const DictionariesSchema = z
 	.object({
 		userRole: z.array(DictionaryItemSchema).describe('登录/鉴权角色字典'),
+		subjects: z.array(DictionaryItemSchema).describe('学科字典（用于内容标签/筛选）'),
+		gradeRanges: z.array(DictionaryItemSchema).describe('年级范围字典（用于内容标签/筛选）'),
 		userStatus: z.array(DictionaryItemSchema),
 		volunteerStatus: z.array(DictionaryItemSchema),
 		gender: z.array(DictionaryItemSchema),
