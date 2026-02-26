@@ -33,18 +33,25 @@ if (!isProd) {
   app.set('etag', false);
 }
 
-app.use(
-  helmet({
-    // In LAN/dev (plain HTTP), Helmet's default CSP may include `upgrade-insecure-requests`,
-    // which forces browsers to request https://... resources and breaks Swagger UI.
-    contentSecurityPolicy: isProd ? undefined : false,
-    // These headers are useful on HTTPS origins, but noisy/problematic on http://<lan-ip>
-    crossOriginOpenerPolicy: isProd ? undefined : false,
-    originAgentCluster: isProd ? undefined : false,
-    // HSTS only makes sense on HTTPS; disable for dev to avoid confusion
-    hsts: isProd ? undefined : false,
-  })
-);
+// Helmet defaults are great for HTTPS, but on plain HTTP origins they can:
+// - trigger CSP `upgrade-insecure-requests` (breaking Swagger UI assets)
+// - emit COOP / Origin-Agent-Cluster warnings in browsers
+// We enable the full set only when the current request is HTTPS.
+const helmetSecure = helmet();
+const helmetInsecure = helmet({
+  contentSecurityPolicy: false,
+  crossOriginOpenerPolicy: false,
+  originAgentCluster: false,
+  hsts: false,
+});
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const forwardedProto = typeof req.headers['x-forwarded-proto'] === 'string'
+    ? req.headers['x-forwarded-proto'].split(',')[0].trim()
+    : undefined;
+  const isHttps = req.secure || forwardedProto === 'https';
+  return (isHttps ? helmetSecure : helmetInsecure)(req, res, next);
+});
 app.use(cors({
   origin: '*', // Configure properly in production
   credentials: true
