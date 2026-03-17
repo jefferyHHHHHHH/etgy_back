@@ -52,17 +52,34 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   // Swagger UI is often accessed directly via public IP over plain HTTP.
   // Helmet's default CSP may include `upgrade-insecure-requests`, which upgrades
   // Swagger UI static assets to HTTPS and causes a blank page if HTTPS is not set up.
-  // To keep `/api/docs*` usable in HTTP/IP deployments, always use the insecure preset.
-  if (req.path === '/api/docs' || req.path.startsWith('/api/docs/')) {
-    return helmetInsecure(req, res, next);
-  }
+  // To keep `/api/docs*` usable in HTTP/IP deployments, always treat it as insecure.
+  const url = req.originalUrl || req.url;
+  const isSwagger = url === '/api/docs' || url.startsWith('/api/docs/') || url.startsWith('/api/docs?');
 
-  // IMPORTANT: do not read `x-forwarded-proto` directly here.
-  // Express only trusts that header when `trust proxy` is enabled and the
-  // request comes from a trusted proxy. Using req.secure avoids client spoofing.
-  const isHttps = req.secure;
-  const useSecureHelmet = strictSecurityHeadersEnabled && isHttps;
-  return (useSecureHelmet ? helmetSecure : helmetInsecure)(req, res, next);
+  // IMPORTANT:
+  // - Do not trust raw `x-forwarded-proto` from the client.
+  // - `req.protocol` only uses proxy headers when `trust proxy` is enabled.
+  // This makes it safer than reading headers directly.
+  const isHttps = req.protocol === 'https';
+  const useSecureHelmet = !isSwagger && strictSecurityHeadersEnabled && isHttps;
+
+  const helmetMiddleware = useSecureHelmet ? helmetSecure : helmetInsecure;
+  return helmetMiddleware(req, res, (err?: unknown) => {
+    if (err) return next(err as any);
+
+    // Final safety net for plain HTTP:
+    // Ensure we never emit headers that can force the browser to upgrade to HTTPS
+    // or break Swagger UI when accessed over http://<public-ip>.
+    if (!useSecureHelmet) {
+      res.removeHeader('Content-Security-Policy');
+      res.removeHeader('Content-Security-Policy-Report-Only');
+      res.removeHeader('Strict-Transport-Security');
+      res.removeHeader('Cross-Origin-Opener-Policy');
+      res.removeHeader('Origin-Agent-Cluster');
+    }
+
+    return next();
+  });
 });
 app.use(cors({
   origin: '*', // Configure properly in production
