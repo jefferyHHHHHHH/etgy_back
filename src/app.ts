@@ -49,6 +49,14 @@ const helmetInsecure = helmet({
 });
 
 app.use((req: Request, res: Response, next: NextFunction) => {
+  // Swagger UI is often accessed directly via public IP over plain HTTP.
+  // Helmet's default CSP may include `upgrade-insecure-requests`, which upgrades
+  // Swagger UI static assets to HTTPS and causes a blank page if HTTPS is not set up.
+  // To keep `/api/docs*` usable in HTTP/IP deployments, always use the insecure preset.
+  if (req.path === '/api/docs' || req.path.startsWith('/api/docs/')) {
+    return helmetInsecure(req, res, next);
+  }
+
   // IMPORTANT: do not read `x-forwarded-proto` directly here.
   // Express only trusts that header when `trust proxy` is enabled and the
   // request comes from a trusted proxy. Using req.secure avoids client spoofing.
