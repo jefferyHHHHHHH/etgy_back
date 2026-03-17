@@ -45,7 +45,7 @@ const helmetInsecure = helmet({
   contentSecurityPolicy: false,
   crossOriginOpenerPolicy: false,
   originAgentCluster: false,
-  hsts: false,
+  strictTransportSecurity: false,
 });
 
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -62,6 +62,24 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   // This makes it safer than reading headers directly.
   const isHttps = req.protocol === 'https';
   const useSecureHelmet = !isSwagger && strictSecurityHeadersEnabled && isHttps;
+
+  // Helmet can apply some headers very late (right before headers are sent).
+  // If the request is not treated as HTTPS, we must ensure these headers never
+  // reach the client, otherwise browsers may upgrade http:// to https:// and
+  // break Swagger UI on plain-HTTP public IP deployments.
+  if (!useSecureHelmet) {
+    const originalWriteHead = res.writeHead;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (res as any).writeHead = function writeHeadPatched(...args: any[]) {
+      res.removeHeader('Content-Security-Policy');
+      res.removeHeader('Content-Security-Policy-Report-Only');
+      res.removeHeader('Strict-Transport-Security');
+      res.removeHeader('Cross-Origin-Opener-Policy');
+      res.removeHeader('Origin-Agent-Cluster');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (originalWriteHead as any).apply(this, args);
+    };
+  }
 
   const helmetMiddleware = useSecureHelmet ? helmetSecure : helmetInsecure;
   return helmetMiddleware(req, res, (err?: unknown) => {
