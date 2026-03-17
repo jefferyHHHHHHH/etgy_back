@@ -24,7 +24,9 @@ const isProd = env.NODE_ENV === 'production';
 // If deployed behind a reverse proxy (Nginx/Ingress/Cloud LB), enable trust proxy so
 // req.ip uses X-Forwarded-For. Otherwise all clients may appear as the same IP and
 // get rate-limited together.
-const trustProxy = typeof env.TRUST_PROXY === 'boolean' ? env.TRUST_PROXY : isProd;
+// IMPORTANT: keep this opt-in. Enabling `trust proxy` when not actually behind a
+// reverse proxy makes the app trust spoofable forwarding headers.
+const trustProxy = env.TRUST_PROXY === true;
 app.set('trust proxy', trustProxy ? 1 : false);
 
 // In development, avoid 304 responses preserving previously cached security headers.
@@ -46,10 +48,10 @@ const helmetInsecure = helmet({
 });
 
 app.use((req: Request, res: Response, next: NextFunction) => {
-  const forwardedProto = typeof req.headers['x-forwarded-proto'] === 'string'
-    ? req.headers['x-forwarded-proto'].split(',')[0].trim()
-    : undefined;
-  const isHttps = req.secure || forwardedProto === 'https';
+  // IMPORTANT: do not read `x-forwarded-proto` directly here.
+  // Express only trusts that header when `trust proxy` is enabled and the
+  // request comes from a trusted proxy. Using req.secure avoids client spoofing.
+  const isHttps = req.secure;
   return (isHttps ? helmetSecure : helmetInsecure)(req, res, next);
 });
 app.use(cors({

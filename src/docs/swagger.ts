@@ -15,10 +15,9 @@ export const registerSwagger = (app: Express) => {
 		res.setHeader('Pragma', 'no-cache');
 		res.setHeader('Expires', '0');
 
-		const forwardedProto = typeof req.headers['x-forwarded-proto'] === 'string'
-			? req.headers['x-forwarded-proto'].split(',')[0].trim()
-			: undefined;
-		const proto = forwardedProto || req.protocol;
+		// Use Express's protocol resolution (respects `trust proxy`).
+		// Do not trust raw x-forwarded-proto from the client.
+		const proto = req.protocol;
 		const host = req.get('host');
 		const serverUrl = host ? `${proto}://${host}` : undefined;
 
