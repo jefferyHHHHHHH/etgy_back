@@ -38,6 +38,12 @@ const envSchema = z.object({
   // When running behind Nginx/Ingress/Cloud LB, enable this so req.ip uses X-Forwarded-For.
   TRUST_PROXY: z.coerce.boolean().optional(),
 
+  // Security headers mode
+  // false (default): disable headers that require trustworthy HTTPS origins
+  // (CSP upgrade-insecure-requests, HSTS, COOP, OAC) to keep HTTP/IP deployments usable.
+  // true: enable full Helmet headers on HTTPS requests.
+  SECURITY_HEADERS_STRICT: z.coerce.boolean().default(false),
+
   // API rate limit
   // Applied to /api/* as a coarse safeguard.
   // Note: In production behind proxies, enable TRUST_PROXY to avoid all clients sharing one IP.

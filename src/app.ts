@@ -20,6 +20,7 @@ const app = express();
 app.use(requestIdMiddleware);
 app.use(loggerMiddleware);
 const isProd = env.NODE_ENV === 'production';
+const strictSecurityHeadersEnabled = env.SECURITY_HEADERS_STRICT === true;
 
 // If deployed behind a reverse proxy (Nginx/Ingress/Cloud LB), enable trust proxy so
 // req.ip uses X-Forwarded-For. Otherwise all clients may appear as the same IP and
@@ -52,7 +53,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   // Express only trusts that header when `trust proxy` is enabled and the
   // request comes from a trusted proxy. Using req.secure avoids client spoofing.
   const isHttps = req.secure;
-  return (isHttps ? helmetSecure : helmetInsecure)(req, res, next);
+  const useSecureHelmet = strictSecurityHeadersEnabled && isHttps;
+  return (useSecureHelmet ? helmetSecure : helmetInsecure)(req, res, next);
 });
 app.use(cors({
   origin: '*', // Configure properly in production
