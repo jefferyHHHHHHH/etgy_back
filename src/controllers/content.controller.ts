@@ -61,6 +61,46 @@ export class ContentController {
   }
 
   /**
+   * GET /api/videos/mine
+   * Volunteer: list my uploaded videos (all statuses), optionally filter by status.
+   */
+  static async listMyVideos(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+
+      // Viewer scope (optional today, but kept consistent with other endpoints)
+      let viewerCollegeId: number | undefined;
+      const profile = await UserService.getUserProfile(user.userId);
+      viewerCollegeId = profile?.volunteerProfile?.collegeId ?? undefined;
+
+      const { status, search, grade, subject, sort, page, pageSize } = req.query;
+
+      const result = await ContentService.listVideos({
+        status: status as VideoStatus | undefined,
+        search: search as string | undefined,
+        grade: grade as string | undefined,
+        subject: subject as string | undefined,
+        sort: (sort as 'latest' | 'hot') ?? 'latest',
+        page: page ? Number(page) : undefined,
+        pageSize: pageSize ? Number(pageSize) : undefined,
+        viewerRole: user.role as UserRole,
+        viewerUserId: user.userId,
+        viewerCollegeId,
+      });
+
+      res.setHeader('X-Total-Count', String(result.total));
+      res.setHeader('X-Page', String(result.page));
+      res.setHeader('X-Page-Size', String(result.pageSize));
+      return res.json({ code: 200, message: 'Success', data: result.items });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(500).json({ code: 500, message: error?.message || 'Internal Server Error' });
+    }
+  }
+
+  /**
    * GET /api/videos/admin
    * Management list for admins (college/platform).
    * Returns pagination meta in response body (friendlier for admin UIs).

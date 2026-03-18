@@ -48,6 +48,16 @@ const listVideosQuerySchema = z.object({
 	pageSize: z.coerce.number().int().min(1).max(50).default(20),
 });
 
+const listMyVideosQuerySchema = z.object({
+	status: z.nativeEnum(VideoStatus).optional().describe('按视频状态筛选（如 REVIEW/REJECTED/APPROVED/PUBLISHED 等）'),
+	search: z.string().optional().describe('按标题/简介模糊搜索（仅我的视频）'),
+	grade: z.string().optional(),
+	subject: z.string().optional(),
+	sort: z.enum(['latest', 'hot']).default('latest'),
+	page: z.coerce.number().int().min(1).default(1),
+	pageSize: z.coerce.number().int().min(1).max(50).default(20),
+});
+
 const auditBodySchema = z.object({
 	pass: z.coerce.boolean(),
 	reason: z.string().optional(),
@@ -325,6 +335,20 @@ registerPath({
 });
 
 registerPath({
+	method: 'get',
+	path: '/api/videos/mine',
+	summary: '志愿者查看我的视频列表（可按状态筛选）',
+	tags: ['Videos'],
+	security: [{ bearerAuth: [] }],
+	request: { query: listMyVideosQuerySchema },
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(z.array(VideoSchema)) } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
 	method: 'post',
 	path: '/api/videos/{id}/submit',
 	summary: '提交视频审核（志愿者）',
@@ -441,6 +465,15 @@ router.get(
 
 // Protected single-segment routes MUST be registered before '/:id'
 router.get('/watch-logs', authMiddleware, validateQuery(listWatchLogsQuerySchema), ContentController.listMyWatchLogs);
+
+// Volunteer: list my videos (supports status filter)
+router.get(
+	'/mine',
+	authMiddleware,
+	requireRole([UserRole.VOLUNTEER]),
+	validateQuery(listMyVideosQuerySchema),
+	ContentController.listMyVideos
+);
 
 router.get(
 	'/admin',
