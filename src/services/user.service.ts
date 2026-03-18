@@ -3,6 +3,7 @@ import { prisma } from '../config/prisma';
 import { UserRole, UserStatus, VolunteerStatus, Gender } from '../types/enums';
 import bcrypt from 'bcryptjs';
 import { HttpError } from '../utils/httpError';
+import { decryptPassword, encryptPassword } from '../utils/passwordCipher';
 
 export class UserService {
 
@@ -21,15 +22,17 @@ export class UserService {
   static async getUserProfile(userId: number) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      include: {
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
         childProfile: { include: { college: true } },
-        volunteerProfile: {
-          include: { college: true }
-        },
-        adminProfile: {
-          include: { college: true }
-        }
-      }
+        volunteerProfile: { include: { college: true } },
+        adminProfile: { include: { college: true } },
+      },
     });
     
     if (!user) throw new Error('User not found');
@@ -55,6 +58,7 @@ export class UserService {
     if (!data.password || data.password.length < 6) throw new HttpError(400, 'password must be at least 6 chars');
 
     const passwordHash = await bcrypt.hash(data.password, 10);
+    const passwordEnc = encryptPassword(data.password);
 
     if (typeof data.collegeId === 'number') {
       const college = await prisma.college.findUnique({ where: { id: data.collegeId } });
@@ -65,6 +69,7 @@ export class UserService {
       data: {
         username,
         passwordHash,
+        passwordEnc,
         role: UserRole.CHILD,
         status: data.status ?? UserStatus.INACTIVE,
         childProfile: {
@@ -77,9 +82,17 @@ export class UserService {
           }
         }
       },
-      include: { childProfile: true }
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        childProfile: true,
+      },
     });
-    return user;
+    return { ...user, password: '****' };
   }
 
   /**
@@ -113,10 +126,12 @@ export class UserService {
           if (!college) throw new HttpError(400, 'Invalid collegeId');
         }
         const passwordHash = await bcrypt.hash(item.password, 10);
+        const passwordEnc = encryptPassword(item.password);
         const created = await prisma.user.create({
           data: {
             username,
             passwordHash,
+            passwordEnc,
             role: UserRole.CHILD,
             status: item.status ?? UserStatus.INACTIVE,
             childProfile: {
@@ -190,7 +205,15 @@ export class UserService {
         orderBy: [{ id: 'desc' }],
         skip,
         take: pageSize,
-        include: { childProfile: true },
+        select: {
+          id: true,
+          username: true,
+          role: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+          childProfile: true,
+        },
       }),
     ]);
 
@@ -198,7 +221,7 @@ export class UserService {
       page,
       pageSize,
       total,
-      items,
+      items: items.map((u) => ({ ...u, password: '****' })),
     };
   }
 
@@ -359,7 +382,10 @@ export class UserService {
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await prisma.user.update({
       where: { id: userId },
-      data: { passwordHash },
+      data: {
+        passwordHash,
+        ...(user.role === UserRole.CHILD ? { passwordEnc: encryptPassword(newPassword) } : {}),
+      },
     });
 
     return { userId, changed: true };
@@ -517,9 +543,61 @@ export class UserService {
 
     const tempPassword = this.generateTempPassword(10);
     const passwordHash = await bcrypt.hash(tempPassword, 10);
-    await prisma.user.update({ where: { id: childUserId }, data: { passwordHash } });
+    await prisma.user.update({
+      where: { id: childUserId },
+      data: {
+        passwordHash,
+        passwordEnc: encryptPassword(tempPassword),
+      },
+    });
 
     return { userId: childUserId, tempPassword };
+  }
+
+  static async getChildPassword(childUserId: number) {
+    const user = await prisma.user.findUnique({
+      where: { id: childUserId },
+      select: { id: true, role: true, passwordEnc: true },
+    });
+    if (!user) throw new HttpError(404, 'User not found');
+    if (user.role !== UserRole.CHILD) throw new HttpError(400, 'Target user is not a child');
+
+    if (user.passwordEnc) {
+      try {
+        const password = decryptPassword(user.passwordEnc);
+        return { userId: user.id, password };
+      } catch {
+        // Fall through to reset if payload is corrupted / key rotated.
+      }
+    }
+
+    // Legacy/corrupted rows: cannot recover from hash, generate a new temp password.
+    const tempPassword = this.generateTempPassword(10);
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+    await prisma.user.update({
+      where: { id: childUserId },
+      data: { passwordHash, passwordEnc: encryptPassword(tempPassword) },
+    });
+    return { userId: user.id, password: tempPassword, regenerated: true };
+  }
+
+  static async setChildPassword(childUserId: number, newPassword: string) {
+    if (!newPassword || newPassword.length < 6) throw new HttpError(400, 'newPassword must be at least 6 chars');
+
+    const user = await prisma.user.findUnique({ where: { id: childUserId }, select: { id: true, role: true } });
+    if (!user) throw new HttpError(404, 'User not found');
+    if (user.role !== UserRole.CHILD) throw new HttpError(400, 'Target user is not a child');
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: childUserId },
+      data: {
+        passwordHash,
+        passwordEnc: encryptPassword(newPassword),
+      },
+    });
+
+    return { userId: user.id, changed: true };
   }
 
   static async updateChildStatus(childUserId: number, status: UserStatus) {

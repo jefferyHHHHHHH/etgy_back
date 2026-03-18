@@ -32,6 +32,9 @@ model User {
   id           Int        @id @default(autoincrement())
   username     String     @unique // Child: generated name, Volunteer: studentId/email
   passwordHash String
+  // Encrypted password for child provisioning UI (platform admin can reveal/reset).
+  // Stored as AES-256-GCM payload; nullable for legacy rows.
+  passwordEnc  String?
   role         UserRole
   status       UserStatus @default(INACTIVE)
   createdAt    DateTime   @default(now())
