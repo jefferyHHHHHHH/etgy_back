@@ -3,8 +3,18 @@ import bcrypt from 'bcryptjs';
 import { AuditAction, LiveStatus, ModerationAction, UserRole, UserStatus, VideoStatus } from '../types/enums';
 import { HttpError } from '../utils/httpError';
 import { ModerationService } from './moderation.service';
+import { decryptPassword, encryptPassword } from '../utils/passwordCipher';
 
 export class PlatformService {
+  private static generateTempPassword(len: number = 10) {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    let out = '';
+    for (let i = 0; i < len; i++) {
+      out += alphabet[Math.floor(Math.random() * alphabet.length)];
+    }
+    return out;
+  }
+
   private static async getCollegeIdForCollegeAdmin(userId: number) {
     const profile = await prisma.adminProfile.findUnique({ where: { userId }, select: { collegeId: true } });
     return profile?.collegeId ?? null;
@@ -67,11 +77,13 @@ export class PlatformService {
     if (existing) throw new HttpError(409, 'Username already exists');
 
     const passwordHash = await bcrypt.hash(data.password, 10);
+    const passwordEnc = encryptPassword(data.password);
 
-    return prisma.user.create({
+    const created = await prisma.user.create({
       data: {
         username,
         passwordHash,
+        passwordEnc,
         role: UserRole.COLLEGE_ADMIN,
         status: UserStatus.ACTIVE,
         adminProfile: {
@@ -81,14 +93,22 @@ export class PlatformService {
           },
         },
       },
-      include: {
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
         adminProfile: { include: { college: true } },
       },
     });
+
+    return { ...created, password: '****' };
   }
 
   static async listCollegeAdminAccounts(collegeId?: number) {
-    return prisma.user.findMany({
+    const items = await prisma.user.findMany({
       where: {
         role: UserRole.COLLEGE_ADMIN,
         ...(collegeId
@@ -100,10 +120,60 @@ export class PlatformService {
           : {}),
       },
       orderBy: [{ id: 'desc' }],
-      include: {
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
         adminProfile: { include: { college: true } },
       },
     });
+
+    return items.map((u) => ({ ...u, password: '****' }));
+  }
+
+  static async getCollegeAdminPassword(collegeAdminUserId: number) {
+    const user = await prisma.user.findUnique({
+      where: { id: collegeAdminUserId },
+      select: { id: true, role: true, passwordEnc: true },
+    });
+    if (!user) throw new HttpError(404, 'User not found');
+    if (user.role !== UserRole.COLLEGE_ADMIN) throw new HttpError(400, '目标用户不是学院管理员');
+
+    if (user.passwordEnc) {
+      try {
+        const password = decryptPassword(user.passwordEnc);
+        return { userId: user.id, password };
+      } catch {
+        // Fall through to reset if payload is corrupted / key rotated.
+      }
+    }
+
+    const tempPassword = this.generateTempPassword(10);
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash, passwordEnc: encryptPassword(tempPassword) },
+    });
+    return { userId: user.id, password: tempPassword, regenerated: true };
+  }
+
+  static async setCollegeAdminPassword(collegeAdminUserId: number, newPassword: string) {
+    if (!newPassword || newPassword.length < 6) throw new HttpError(400, 'newPassword must be at least 6 chars');
+
+    const user = await prisma.user.findUnique({ where: { id: collegeAdminUserId }, select: { id: true, role: true } });
+    if (!user) throw new HttpError(404, 'User not found');
+    if (user.role !== UserRole.COLLEGE_ADMIN) throw new HttpError(400, '目标用户不是学院管理员');
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash, passwordEnc: encryptPassword(newPassword) },
+    });
+
+    return { userId: user.id, changed: true };
   }
 
   static async deleteCollegeAdminAccount(collegeAdminUserId: number, operatorUserId: number) {
@@ -149,7 +219,15 @@ export class PlatformService {
           update: updateProfile,
         },
       },
-      include: { adminProfile: { include: { college: true } } },
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        adminProfile: { include: { college: true } },
+      },
     });
   }
 
@@ -165,7 +243,15 @@ export class PlatformService {
     return prisma.user.update({
       where: { id: collegeAdminUserId },
       data: { status },
-      include: { adminProfile: { include: { college: true } } },
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        adminProfile: { include: { college: true } },
+      },
     });
   }
 

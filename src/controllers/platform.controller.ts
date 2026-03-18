@@ -66,6 +66,33 @@ export class PlatformController {
     }
   }
 
+  static async getCollegeAdminPassword(req: Request, res: Response) {
+    try {
+      const id = Number(req.params.id);
+      const data = await PlatformService.getCollegeAdminPassword(id);
+      return res.json({ code: 200, message: 'Success', data });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(500).json({ code: 500, message: error?.message || 'Internal Server Error' });
+    }
+  }
+
+  static async setCollegeAdminPassword(req: Request, res: Response) {
+    try {
+      const id = Number(req.params.id);
+      const { newPassword } = req.body as { newPassword: string };
+      const data = await PlatformService.setCollegeAdminPassword(id, newPassword);
+      return res.json({ code: 200, message: 'Success', data });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error?.message || 'Change college admin password failed' });
+    }
+  }
+
   static async deleteCollegeAdmin(req: Request, res: Response) {
     try {
       const id = Number(req.params.id);

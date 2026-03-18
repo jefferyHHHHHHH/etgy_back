@@ -43,6 +43,10 @@ const updateCollegeAdminStatusBodySchema = z.object({
   status: z.nativeEnum(UserStatus),
 });
 
+const setCollegeAdminPasswordBodySchema = z.object({
+  newPassword: z.string().min(6),
+});
+
 const listAuditLogsQuerySchema = z.object({
   collegeId: z.coerce.number().int().positive().optional().describe('平台管理员可按学院筛选；学院管理员会被强制为自身学院'),
   action: z.nativeEnum(AuditAction).optional(),
@@ -341,6 +345,41 @@ registerPath({
 });
 
 registerPath({
+  method: 'get',
+  path: '/api/platform/college-admins/{id}/password',
+  summary: '查看学院管理员账号密码（平台管理员）',
+  tags: ['Platform'],
+  security: [{ bearerAuth: [] }],
+  request: { params: idParamSchema },
+  responses: {
+    200: { description: 'Success', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+    400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registerPath({
+  method: 'post',
+  path: '/api/platform/college-admins/{id}/password',
+  summary: '修改学院管理员账号密码（平台管理员）',
+  tags: ['Platform'],
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: idParamSchema,
+    body: { content: { 'application/json': { schema: setCollegeAdminPasswordBodySchema } } },
+  },
+  responses: {
+    200: { description: 'Success', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+    400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registerPath({
   method: 'delete',
   path: '/api/platform/college-admins/{id}',
   summary: '删除学院管理员账号（平台管理员）',
@@ -450,6 +489,21 @@ router.get(
   '/college-admins',
   requirePermissions([Permission.USER_COLLEGE_ADMIN_MANAGE]),
   PlatformController.listCollegeAdmins
+);
+
+router.get(
+  '/college-admins/:id/password',
+  requirePermissions([Permission.USER_COLLEGE_ADMIN_MANAGE]),
+  validateParams(idParamSchema),
+  PlatformController.getCollegeAdminPassword
+);
+
+router.post(
+  '/college-admins/:id/password',
+  requirePermissions([Permission.USER_COLLEGE_ADMIN_MANAGE]),
+  validateParams(idParamSchema),
+  validateBody(setCollegeAdminPasswordBodySchema),
+  PlatformController.setCollegeAdminPassword
 );
 
 router.get(
