@@ -251,10 +251,13 @@ export class UserService {
     if (existing) throw new HttpError(409, 'Username already exists');
 
     const passwordHash = await bcrypt.hash(params.password, 10);
-    return prisma.user.create({
+    const passwordEnc = encryptPassword(params.password);
+
+    const created = await prisma.user.create({
       data: {
         username,
         passwordHash,
+        passwordEnc,
         role: UserRole.VOLUNTEER,
         status: params.status ?? UserStatus.ACTIVE,
         volunteerProfile: {
@@ -268,10 +271,18 @@ export class UserService {
           },
         },
       },
-      include: {
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
         volunteerProfile: { include: { college: true } },
       },
     });
+
+    return { ...created, password: '****' };
   }
 
   /**
@@ -337,10 +348,12 @@ export class UserService {
         }
 
         const passwordHash = await bcrypt.hash(item.password, 10);
+        const passwordEnc = encryptPassword(item.password);
         const created = await prisma.user.create({
           data: {
             username,
             passwordHash,
+            passwordEnc,
             role: UserRole.VOLUNTEER,
             status: item.status ?? UserStatus.ACTIVE,
             volunteerProfile: {
@@ -488,7 +501,91 @@ export class UserService {
       }),
     ]);
 
-    return { page, pageSize, total, items };
+    return { page, pageSize, total, items: items.map((v) => ({ ...v, password: '****' })) };
+  }
+
+  static async getVolunteerPassword(params: {
+    operatorRole: UserRole;
+    operatorUserId: number;
+    operatorCollegeId?: number;
+    volunteerUserId: number;
+  }) {
+    const { operatorRole, operatorCollegeId, volunteerUserId } = params;
+
+    if (operatorRole !== UserRole.COLLEGE_ADMIN && operatorRole !== UserRole.PLATFORM_ADMIN) {
+      throw new HttpError(403, 'Forbidden');
+    }
+
+    const scoped = await prisma.volunteerProfile.findUnique({
+      where: { userId: volunteerUserId },
+      select: {
+        collegeId: true,
+        user: { select: { id: true, role: true, passwordEnc: true } },
+      },
+    });
+    if (!scoped) throw new HttpError(404, 'Volunteer not found');
+    if (scoped.user.role !== UserRole.VOLUNTEER) throw new HttpError(400, 'Target user is not a volunteer');
+
+    if (operatorRole === UserRole.COLLEGE_ADMIN) {
+      if (!operatorCollegeId) throw new HttpError(400, 'Admin must belong to a college');
+      if (scoped.collegeId !== operatorCollegeId) throw new HttpError(403, 'Forbidden: cross-college access');
+    }
+
+    if (scoped.user.passwordEnc) {
+      try {
+        const password = decryptPassword(scoped.user.passwordEnc);
+        return { userId: scoped.user.id, password };
+      } catch {
+        // fall through
+      }
+    }
+
+    const tempPassword = this.generateTempPassword(10);
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+    await prisma.user.update({
+      where: { id: scoped.user.id },
+      data: { passwordHash, passwordEnc: encryptPassword(tempPassword) },
+    });
+
+    return { userId: scoped.user.id, password: tempPassword, regenerated: true };
+  }
+
+  static async setVolunteerPassword(params: {
+    operatorRole: UserRole;
+    operatorUserId: number;
+    operatorCollegeId?: number;
+    volunteerUserId: number;
+    newPassword: string;
+  }) {
+    const { operatorRole, operatorCollegeId, volunteerUserId, newPassword } = params;
+    if (!newPassword || newPassword.length < 6) throw new HttpError(400, 'newPassword must be at least 6 chars');
+
+    if (operatorRole !== UserRole.COLLEGE_ADMIN && operatorRole !== UserRole.PLATFORM_ADMIN) {
+      throw new HttpError(403, 'Forbidden');
+    }
+
+    const scoped = await prisma.volunteerProfile.findUnique({
+      where: { userId: volunteerUserId },
+      select: {
+        collegeId: true,
+        user: { select: { id: true, role: true } },
+      },
+    });
+    if (!scoped) throw new HttpError(404, 'Volunteer not found');
+    if (scoped.user.role !== UserRole.VOLUNTEER) throw new HttpError(400, 'Target user is not a volunteer');
+
+    if (operatorRole === UserRole.COLLEGE_ADMIN) {
+      if (!operatorCollegeId) throw new HttpError(400, 'Admin must belong to a college');
+      if (scoped.collegeId !== operatorCollegeId) throw new HttpError(403, 'Forbidden: cross-college access');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: scoped.user.id },
+      data: { passwordHash, passwordEnc: encryptPassword(newPassword) },
+    });
+
+    return { userId: scoped.user.id, changed: true };
   }
 
   static async setVolunteerSuspended(params: {

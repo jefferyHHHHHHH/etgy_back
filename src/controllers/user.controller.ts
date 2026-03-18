@@ -436,4 +436,68 @@ export class UserController {
       return res.status(400).json({ code: 400, message: error.message });
     }
   }
+
+  /**
+   * GET /api/users/volunteers/:id/password
+   */
+  static async getVolunteerPassword(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const { id } = req.params;
+
+      if (user.role !== UserRole.COLLEGE_ADMIN && user.role !== UserRole.PLATFORM_ADMIN) {
+        return res.status(403).json({ code: 403, message: 'Forbidden' });
+      }
+
+      const profile = await UserService.getUserProfile(user.userId);
+      const operatorCollegeId = profile?.adminProfile?.collegeId ?? undefined;
+
+      const data = await UserService.getVolunteerPassword({
+        operatorRole: user.role as UserRole,
+        operatorUserId: user.userId,
+        operatorCollegeId,
+        volunteerUserId: Number(id),
+      });
+
+      return res.json({ code: 200, message: 'Success', data });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(500).json({ code: 500, message: error?.message || 'Internal Server Error' });
+    }
+  }
+
+  /**
+   * POST /api/users/volunteers/:id/password
+   */
+  static async setVolunteerPassword(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const { id } = req.params;
+      const { newPassword } = req.body as { newPassword: string };
+
+      if (user.role !== UserRole.COLLEGE_ADMIN && user.role !== UserRole.PLATFORM_ADMIN) {
+        return res.status(403).json({ code: 403, message: 'Forbidden' });
+      }
+
+      const profile = await UserService.getUserProfile(user.userId);
+      const operatorCollegeId = profile?.adminProfile?.collegeId ?? undefined;
+
+      const data = await UserService.setVolunteerPassword({
+        operatorRole: user.role as UserRole,
+        operatorUserId: user.userId,
+        operatorCollegeId,
+        volunteerUserId: Number(id),
+        newPassword,
+      });
+
+      return res.json({ code: 200, message: 'Success', data });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error?.message || 'Bad Request' });
+    }
+  }
 }

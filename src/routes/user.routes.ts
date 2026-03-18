@@ -114,6 +114,10 @@ const updateVolunteerStatusBodySchema = z.object({
 	status: z.nativeEnum(VolunteerStatus),
 });
 
+const setVolunteerPasswordBodySchema = z.object({
+	newPassword: z.string().min(6),
+});
+
 // OpenAPI registration
 registerPath({
 	method: 'get',
@@ -373,6 +377,41 @@ registerPath({
 	},
 });
 
+registerPath({
+	method: 'get',
+	path: '/api/users/volunteers/{id}/password',
+	summary: '查看志愿者账号密码（管理员）',
+	tags: ['Users'],
+	security: [{ bearerAuth: [] }],
+	request: { params: idParamSchema },
+	responses: {
+		200: { description: 'Success', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/users/volunteers/{id}/password',
+	summary: '修改志愿者账号密码（管理员）',
+	tags: ['Users'],
+	security: [{ bearerAuth: [] }],
+	request: {
+		params: idParamSchema,
+		body: { content: { 'application/json': { schema: setVolunteerPasswordBodySchema } } },
+	},
+	responses: {
+		200: { description: 'Success', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
 // Public Routes (None for now)
 
 // Protected Routes
@@ -487,6 +526,23 @@ router.patch(
 	validateParams(idParamSchema),
 	validateBody(updateVolunteerStatusBodySchema),
 	UserController.updateVolunteerStatus
+);
+
+router.get(
+	'/volunteers/:id/password',
+	requireRole([UserRole.PLATFORM_ADMIN, UserRole.COLLEGE_ADMIN]),
+	requirePermissions([Permission.USER_VOLUNTEER_MANAGE]),
+	validateParams(idParamSchema),
+	UserController.getVolunteerPassword
+);
+
+router.post(
+	'/volunteers/:id/password',
+	requireRole([UserRole.PLATFORM_ADMIN, UserRole.COLLEGE_ADMIN]),
+	requirePermissions([Permission.USER_VOLUNTEER_MANAGE]),
+	validateParams(idParamSchema),
+	validateBody(setVolunteerPasswordBodySchema),
+	UserController.setVolunteerPassword
 );
 
 export default router;

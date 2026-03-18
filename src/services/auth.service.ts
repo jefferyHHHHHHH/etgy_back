@@ -15,6 +15,15 @@ export class AuthService {
     // 1. Find User
     const user = await prisma.user.findUnique({
       where: { username },
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        passwordHash: true,
+      },
     });
 
     if (!user) {
@@ -52,7 +61,8 @@ export class AuthService {
       username: user.username,
     });
 
-    return { token, user };
+    const { passwordHash: _passwordHash, ...safeUser } = user;
+    return { token, user: safeUser };
   }
 
   /**
@@ -77,6 +87,14 @@ export class AuthService {
         role,
         status: UserStatus.ACTIVE,
       },
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
     return user;
@@ -99,7 +117,18 @@ export class AuthService {
           openId: session.openId,
         },
       },
-      include: { user: true },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            role: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+      },
     });
 
     if (!account) {
