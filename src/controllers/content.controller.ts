@@ -314,6 +314,44 @@ export class ContentController {
     }
   }
 
+  /**
+   * GET /api/videos/mine/:id/media-urls
+   * Volunteer: get presigned media URLs for my uploaded video (all statuses).
+   * Strict ownership: cannot access others' videos.
+   */
+  static async getMyVideoMediaUrls(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const { id } = req.params;
+
+      const video = await ContentService.getMyVideoById({
+        videoId: Number(id),
+        uploaderId: user.userId,
+      });
+
+      const [videoUrl, coverUrl] = await Promise.all([
+        OssService.getPlayableUrl({ keyOrUrl: video.url }),
+        video.coverUrl ? OssService.getPlayableUrl({ keyOrUrl: video.coverUrl }) : Promise.resolve(null),
+      ]);
+
+      return res.json({
+        code: 200,
+        message: 'Success',
+        data: {
+          videoId: video.id,
+          url: videoUrl.url,
+          expiresInSeconds: videoUrl.expiresInSeconds,
+          coverUrl: coverUrl ? coverUrl.url : null,
+        },
+      });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
   static async publishVideo(req: Request, res: Response) {
     try {
       const { id } = req.params;

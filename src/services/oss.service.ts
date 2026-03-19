@@ -88,6 +88,44 @@ class OssService {
     return /^https?:\/\//i.test(value);
   }
 
+  private tryExtractKeyFromUrl(rawUrl: string) {
+    try {
+      const u = new URL(rawUrl);
+      const bucket = env.OSS_BUCKET;
+      const endpoint = env.OSS_ENDPOINT ? new URL(env.OSS_ENDPOINT) : null;
+
+      // Only attempt extraction for our configured endpoint (or Qiniu S3-compatible domains)
+      const host = u.hostname.toLowerCase();
+      const endpointHost = endpoint ? endpoint.hostname.toLowerCase() : '';
+      const isLikelyOssHost =
+        (endpointHost && host === endpointHost) ||
+        (endpointHost && host.endsWith(`.${endpointHost}`)) ||
+        host.endsWith('.qiniucs.com');
+
+      if (!isLikelyOssHost) return null;
+
+      // Virtual-hosted style: https://<bucket>.<endpoint>/<key>
+      if (bucket && host.startsWith(`${bucket.toLowerCase()}.`)) {
+        const key = this.normalizeKey(u.pathname);
+        return key || null;
+      }
+
+      // Path-style: https://<endpoint>/<bucket>/<key>
+      if (bucket) {
+        const p = u.pathname.startsWith('/') ? u.pathname.slice(1) : u.pathname;
+        const prefix = `${bucket}/`;
+        if (p.toLowerCase().startsWith(prefix.toLowerCase())) {
+          return this.normalizeKey(p.slice(prefix.length));
+        }
+      }
+
+      // Fallback: treat pathname as key
+      return this.normalizeKey(u.pathname);
+    } catch {
+      return null;
+    }
+  }
+
   private getClient() {
     if (this.client) return this.client;
     this.ensureConfigured();
@@ -125,7 +163,19 @@ class OssService {
   async getPlayableUrl(params: { keyOrUrl: string; expiresInSeconds?: number }) {
     const value = String(params.keyOrUrl || '').trim();
     if (!value) throw new HttpError(400, 'keyOrUrl is required');
-    if (this.isHttpUrl(value)) return { url: value, expiresInSeconds: 0 };
+
+    // If a full URL is provided and it points to the OSS endpoint, generate a presigned URL.
+    // (Qiniu S3-compatible endpoints typically do NOT support anonymous GET.)
+    if (this.isHttpUrl(value)) {
+      const extractedKey = this.tryExtractKeyFromUrl(value);
+      if (!extractedKey) return { url: value, expiresInSeconds: 0 };
+
+      const expiresInSeconds = params.expiresInSeconds ?? this.getPresignExpiresSeconds();
+      const client = this.getClient();
+      const command = new GetObjectCommand({ Bucket: env.OSS_BUCKET!, Key: extractedKey });
+      const url = await getSignedUrl(client, command, { expiresIn: expiresInSeconds });
+      return { url, expiresInSeconds };
+    }
 
     const key = this.normalizeKey(value);
     const expiresInSeconds = params.expiresInSeconds ?? this.getPresignExpiresSeconds();
