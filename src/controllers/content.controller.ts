@@ -245,6 +245,30 @@ export class ContentController {
   }
 
   /**
+   * GET /api/videos/mine/:id
+   * Volunteer: get my uploaded video detail (all statuses).
+   * Strict ownership: cannot fetch others' videos.
+   */
+  static async getMyVideo(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const { id } = req.params;
+
+      const video = await ContentService.getMyVideoById({
+        videoId: Number(id),
+        uploaderId: user.userId,
+      });
+
+      return res.json({ code: 200, message: 'Success', data: video });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
+  /**
    * GET /api/videos/:id/media-urls
    * Returns presigned GET URLs for private OSS objects.
    * Guests can only access published videos (enforced by service).

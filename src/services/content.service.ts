@@ -209,6 +209,29 @@ export class ContentService {
   }
 
   /**
+   * Get my own video detail (any status).
+   * Strict ownership: cannot fetch others' videos even if published.
+   */
+  static async getMyVideoById(params: { videoId: number; uploaderId: number }) {
+    const { videoId, uploaderId } = params;
+
+    const video = await prisma.video.findFirst({
+      where: {
+        id: videoId,
+        uploaderId,
+      },
+      include: {
+        uploader: { select: { realName: true, collegeId: true } },
+        metrics: true,
+        college: true,
+      },
+    });
+
+    if (!video) throw new HttpError(404, 'Video not found');
+    return video;
+  }
+
+  /**
    * Submit for Review
    */
   static async submitReview(videoId: number, userId: number) {

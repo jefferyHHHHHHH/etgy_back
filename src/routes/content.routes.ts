@@ -349,6 +349,22 @@ registerPath({
 });
 
 registerPath({
+	method: 'get',
+	path: '/api/videos/mine/{id}',
+	summary: '志愿者获取我的视频详情（含未发布）',
+	tags: ['Videos'],
+	security: [{ bearerAuth: [] }],
+	description: '仅返回当前登录志愿者自己上传的视频；不会返回他人的视频（即使已发布）。',
+	request: { params: idParamSchema },
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(VideoSchema) } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
 	method: 'post',
 	path: '/api/videos/{id}/submit',
 	summary: '提交视频审核（志愿者）',
@@ -473,6 +489,15 @@ router.get(
 	requireRole([UserRole.VOLUNTEER]),
 	validateQuery(listMyVideosQuerySchema),
 	ContentController.listMyVideos
+);
+
+// Volunteer: get my video detail (any status)
+router.get(
+	'/mine/:id',
+	authMiddleware,
+	requireRole([UserRole.VOLUNTEER]),
+	validateParams(idParamSchema),
+	ContentController.getMyVideo
 );
 
 router.get(
