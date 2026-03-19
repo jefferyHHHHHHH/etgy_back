@@ -7,6 +7,7 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "ts-node --files prisma/seed.ts",
+    "db:bootstrap:accounts": "node -e \"require('ts-node').register({ files: true }); require('./scripts/bootstrap-accounts.ts');\"",
     "build": "tsc",
     "smoke:moderation": "node -e \"require('ts-node').register({ files: true }); require('./scripts/moderation-smoke.ts');\"",
     "smoke:ai-tutor": "node -e \"require('ts-node').register({ files: true }); require('./scripts/ai-tutor-smoke.ts');\"",
