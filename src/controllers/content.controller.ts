@@ -6,6 +6,24 @@ import { HttpError } from '../utils/httpError';
 import OssService from '../services/oss.service';
 
 export class ContentController {
+
+  private static async withSignedVideoUrls(video: any) {
+    const [videoPlayable, coverPlayable] = await Promise.all([
+      OssService.getPlayableUrl({ keyOrUrl: video.url }),
+      video.coverUrl ? OssService.getPlayableUrl({ keyOrUrl: video.coverUrl }) : Promise.resolve(null),
+    ]);
+
+    return {
+      ...video,
+      url: videoPlayable.url,
+      coverUrl: coverPlayable ? coverPlayable.url : video.coverUrl,
+      mediaUrls: {
+        url: videoPlayable.url,
+        coverUrl: coverPlayable ? coverPlayable.url : null,
+        expiresInSeconds: Math.max(videoPlayable.expiresInSeconds || 0, coverPlayable?.expiresInSeconds || 0),
+      },
+    };
+  }
   
   static async createVideo(req: Request, res: Response) {
     try {
@@ -51,7 +69,9 @@ export class ContentController {
 	  res.setHeader('X-Total-Count', String(result.total));
 	  res.setHeader('X-Page', String(result.page));
 	  res.setHeader('X-Page-Size', String(result.pageSize));
-	  res.json({ code: 200, message: 'Success', data: result.items });
+
+	  const itemsWithSignedUrls = await Promise.all(result.items.map((v: any) => this.withSignedVideoUrls(v)));
+	  res.json({ code: 200, message: 'Success', data: itemsWithSignedUrls });
     } catch (error: any) {
         if (error instanceof HttpError) {
           return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
@@ -153,31 +173,15 @@ export class ContentController {
         viewerCollegeId,
       });
 
-      // Admin list UX: return presigned URLs for video and cover so UI can preview/play directly.
-      const itemsWithMediaUrls = await Promise.all(
-        result.items.map(async (video: any) => {
-          const [videoPlayable, coverPlayable] = await Promise.all([
-            OssService.getPlayableUrl({ keyOrUrl: video.url }),
-            video.coverUrl ? OssService.getPlayableUrl({ keyOrUrl: video.coverUrl }) : Promise.resolve(null),
-          ]);
-
-          return {
-            ...video,
-            mediaUrls: {
-              url: videoPlayable.url,
-              coverUrl: coverPlayable ? coverPlayable.url : null,
-              expiresInSeconds: Math.max(videoPlayable.expiresInSeconds || 0, coverPlayable?.expiresInSeconds || 0),
-            },
-          };
-        })
-      );
+      // Admin list UX: presign url/coverUrl directly (and also keep mediaUrls for compatibility).
+      const itemsWithSignedUrls = await Promise.all(result.items.map((v: any) => this.withSignedVideoUrls(v)));
 
       return res.json({
         code: 200,
         message: 'Success',
         data: {
           ...result,
-          items: itemsWithMediaUrls,
+          items: itemsWithSignedUrls,
         },
       });
     } catch (error: any) {
@@ -278,7 +282,8 @@ export class ContentController {
         viewerCollegeId,
       });
 
-      res.json({ code: 200, message: 'Success', data: video });
+	  const signed = await this.withSignedVideoUrls(video);
+	  res.json({ code: 200, message: 'Success', data: signed });
     } catch (error: any) {
       if (error instanceof HttpError) {
         return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
@@ -302,7 +307,8 @@ export class ContentController {
         uploaderId: user.userId,
       });
 
-      return res.json({ code: 200, message: 'Success', data: video });
+	  const signed = await this.withSignedVideoUrls(video);
+	  return res.json({ code: 200, message: 'Success', data: signed });
     } catch (error: any) {
       if (error instanceof HttpError) {
         return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
