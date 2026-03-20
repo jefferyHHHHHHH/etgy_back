@@ -19,6 +19,12 @@ export interface WechatBindTokenPayload {
   unionId?: string;
 }
 
+export interface DeviceBindTokenPayload {
+  purpose: 'device_bind';
+  userId: number;
+  deviceId: string;
+}
+
 export const generateToken = (payload: TokenPayload): string => {
   return jwt.sign({ ...payload }, JWT_SECRET, {
     expiresIn: JWT_EXPIRES_IN,
@@ -41,6 +47,20 @@ export const verifyWechatBindToken = (token: string): WechatBindTokenPayload => 
     throw new Error('Invalid bind token');
   }
   return decoded as WechatBindTokenPayload;
+};
+
+export const generateDeviceBindToken = (payload: Omit<DeviceBindTokenPayload, 'purpose'>): string => {
+  return jwt.sign({ purpose: 'device_bind', ...payload }, JWT_SECRET, {
+    expiresIn: env.DEVICE_BIND_TOKEN_EXPIRE_SECONDS,
+  } as jwt.SignOptions);
+};
+
+export const verifyDeviceBindToken = (token: string): DeviceBindTokenPayload => {
+  const decoded = jwt.verify(token, JWT_SECRET) as Partial<DeviceBindTokenPayload>;
+  if (decoded.purpose !== 'device_bind' || !decoded.userId || !decoded.deviceId) {
+    throw new Error('Invalid device bind token');
+  }
+  return decoded as DeviceBindTokenPayload;
 };
 
 export const getTokenTtlSeconds = (token: string): number => {

@@ -275,6 +275,22 @@ export class UserController {
   }
 
   /**
+   * POST /api/users/children/:id/reset-device-binding (Platform Admin)
+   */
+  static async resetChildDeviceBinding(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const result = await UserService.resetChildDeviceBinding(Number(id));
+      return res.json({ code: 200, message: 'Device binding reset', data: result });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
+  /**
    * PATCH /api/users/children/:id/status (Platform Admin)
    */
   static async updateChildStatus(req: Request, res: Response) {

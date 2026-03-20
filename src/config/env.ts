@@ -60,6 +60,9 @@ const envSchema = z.object({
   WECHAT_MP_APP_SECRET: z.string().optional(),
   WECHAT_MP_BIND_TOKEN_EXPIRE_SECONDS: z.coerce.number().int().positive().default(600),
 
+  // Device binding (child app)
+  DEVICE_BIND_TOKEN_EXPIRE_SECONDS: z.coerce.number().int().positive().default(600),
+
   // iFlytek Spark (讯飞星火) (optional)
   // HTTP OpenAPI: Authorization: Bearer <SPARK_HTTP_API_PASSWORD>
   SPARK_HTTP_ENDPOINT: z.string().url().optional().default('https://spark-api-open.xf-yun.com/v2/chat/completions'),

@@ -11,6 +11,7 @@
     "build": "tsc",
     "smoke:moderation": "node -e \"require('ts-node').register({ files: true }); require('./scripts/moderation-smoke.ts');\"",
     "smoke:ai-tutor": "node -e \"require('ts-node').register({ files: true }); require('./scripts/ai-tutor-smoke.ts');\"",
+    "smoke:device-binding": "node -e \"require('ts-node').register({ files: true }); require('./scripts/device-binding-smoke.ts');\"",
     "start": "node dist/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

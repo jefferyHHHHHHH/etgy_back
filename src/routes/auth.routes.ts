@@ -12,7 +12,33 @@ const loginBodySchema = z.object({
 	username: z.string().min(1),
 	password: z.string().min(1),
 	role: z.nativeEnum(UserRole).optional().describe('登录角色（可选；不传则由后端按账号类型判定/默认）'),
+	deviceId: z.string().min(1).optional().describe('设备唯一标识（儿童端设备绑定）'),
+	deviceInfo: z
+		.object({
+			platform: z.string().optional().describe('平台（android/ios/etc.）'),
+			model: z.string().optional().describe('设备型号'),
+			osVersion: z.string().optional().describe('系统版本'),
+			appVersion: z.string().optional().describe('App 版本号'),
+		})
+		.optional(),
 });
+
+const deviceBindConfirmBodySchema = z.object({
+	bindToken: z.string().min(1).describe('登录返回的 bindToken（短期有效）'),
+	deviceInfo: z
+		.object({
+			platform: z.string().optional(),
+			model: z.string().optional(),
+			osVersion: z.string().optional(),
+			appVersion: z.string().optional(),
+		})
+		.optional(),
+});
+
+const passwordLoginResponseSchema = z.union([
+	z.object({ token: z.string(), user: z.any() }),
+	z.object({ bindRequired: z.literal(true), bindToken: z.string(), user: z.any() }),
+]);
 
 const registerBodySchema = z.object({
 	username: z.string().min(3),
@@ -60,10 +86,40 @@ registerPath({
 	responses: {
 		200: {
 			description: 'Login success',
+			content: { 'application/json': { schema: apiResponse(passwordLoginResponseSchema) } },
+		},
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/auth/device/bind/confirm',
+	summary: '确认设备绑定（儿童端）',
+	tags: ['Auth'],
+	description:
+		'当 /api/auth/login 返回 bindRequired=true 时，用 bindToken 完成设备绑定，并返回 JWT。\n\n' +
+		'规则（MVP）：仅对 CHILD（儿童）账号生效；已绑定则会校验 deviceId 一致性。',
+	request: {
+		body: {
+			content: {
+				'application/json': {
+					schema: deviceBindConfirmBodySchema,
+				},
+			},
+		},
+	},
+	responses: {
+		200: {
+			description: 'OK',
 			content: { 'application/json': { schema: apiResponse(z.object({ token: z.string(), user: z.any() })) } },
 		},
 		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
 		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		409: { description: 'Conflict', content: { 'application/json': { schema: ErrorResponseSchema } } },
 	},
 });
 
@@ -199,5 +255,8 @@ router.post('/wechat/mini-program/login', validateBody(wechatMiniProgramLoginBod
 
 // POST /api/auth/wechat/mini-program/bind
 router.post('/wechat/mini-program/bind', validateBody(wechatMiniProgramBindBodySchema), AuthController.wechatMiniProgramBind);
+
+// POST /api/auth/device/bind/confirm
+router.post('/device/bind/confirm', validateBody(deviceBindConfirmBodySchema), AuthController.confirmDeviceBinding);
 
 export default router;

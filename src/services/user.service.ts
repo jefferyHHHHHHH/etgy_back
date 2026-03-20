@@ -651,6 +651,15 @@ export class UserService {
     return { userId: childUserId, tempPassword };
   }
 
+  static async resetChildDeviceBinding(childUserId: number) {
+    const user = await prisma.user.findUnique({ where: { id: childUserId }, select: { id: true, role: true } });
+    if (!user) throw new HttpError(404, 'User not found');
+    if (user.role !== UserRole.CHILD) throw new HttpError(400, 'Target user is not a child');
+
+    const deleted = await prisma.userDeviceBinding.deleteMany({ where: { userId: childUserId } });
+    return { userId: childUserId, reset: true, hadBinding: deleted.count > 0 };
+  }
+
   static async getChildPassword(childUserId: number) {
     const user = await prisma.user.findUnique({
       where: { id: childUserId },

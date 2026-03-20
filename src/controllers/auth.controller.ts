@@ -9,19 +9,42 @@ import { HttpError } from '../utils/httpError';
 export class AuthController {
   static async login(req: Request, res: Response) {
     try {
-      const { username, password, role } = req.body;
+      const { username, password, role, deviceId, deviceInfo } = req.body;
       if (!username || !password) {
         return res.status(400).json({ code: 400, message: 'Missing username or password' });
       }
 
-      const result = await AuthService.login(username, password, role as UserRole | undefined);
-      res.json({
+      const result = await AuthService.login(username, password, role as UserRole | undefined, {
+        deviceId: deviceId ? String(deviceId) : undefined,
+        deviceInfo: deviceInfo ?? undefined,
+      });
+
+      return res.json({
         code: 200,
         message: 'Login success',
         data: result,
       });
     } catch (error: any) {
-      res.status(401).json({ code: 401, message: error.message || 'Login failed' });
+      const statusCode = error instanceof HttpError ? error.statusCode : 401;
+      return res.status(statusCode).json({ code: statusCode, message: error.message || 'Login failed' });
+    }
+  }
+
+  static async confirmDeviceBinding(req: Request, res: Response) {
+    try {
+      const { bindToken, deviceInfo } = req.body ?? {};
+      const result = await AuthService.confirmDeviceBinding({
+        bindToken: String(bindToken ?? ''),
+        deviceInfo: deviceInfo ?? undefined,
+      });
+      return res.json({
+        code: 200,
+        message: 'OK',
+        data: result,
+      });
+    } catch (error: any) {
+      const statusCode = error instanceof HttpError ? error.statusCode : 400;
+      return res.status(statusCode).json({ code: statusCode, message: error.message || 'Device bind failed' });
     }
   }
 

@@ -1,5 +1,5 @@
 import { prisma } from '../config/prisma';
-import { generateToken, generateWechatBindToken, verifyWechatBindToken } from '../utils/token';
+import { generateDeviceBindToken, generateToken, generateWechatBindToken, verifyDeviceBindToken, verifyWechatBindToken } from '../utils/token';
 // import { UserRole } from '@prisma/client';
 import { UserRole, UserStatus } from '../types/enums';
 import bcrypt from 'bcryptjs';
@@ -7,11 +7,23 @@ import { WechatProvider } from '../types/enums';
 import { WechatService } from './wechat.service';
 import { HttpError } from '../utils/httpError';
 
+export type DeviceInfo = {
+  platform?: string;
+  model?: string;
+  osVersion?: string;
+  appVersion?: string;
+};
+
 export class AuthService {
   /**
    * Password-based login
    */
-  static async login(username: string, password: string, role?: UserRole) {
+  static async login(
+    username: string,
+    password: string,
+    role?: UserRole,
+    options?: { deviceId?: string; deviceInfo?: DeviceInfo; skipDeviceBinding?: boolean }
+  ) {
     // 1. Find User
     const user = await prisma.user.findUnique({
       where: { username },
@@ -27,23 +39,23 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new Error('User not found');
+      throw new HttpError(401, 'User not found');
     }
 
     // Status checks
     if (user.status === UserStatus.SUSPENDED) {
-      throw new Error('Account suspended');
+      throw new HttpError(403, 'Account suspended');
     }
 
     // 2. Optional strict check if role is provided by client
     if (role && user.role !== role) {
-      throw new Error('Role mismatch');
+      throw new HttpError(403, 'Role mismatch');
     }
 
     // 3. Validate Password
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) {
-      throw new Error('Invalid credentials');
+      throw new HttpError(401, 'Invalid credentials');
     }
 
     // PRD: accounts may be pre-created; first successful login activates the account.
@@ -52,6 +64,45 @@ export class AuthService {
         where: { id: user.id },
         data: { status: UserStatus.ACTIVE },
       });
+    }
+
+    const { deviceId, deviceInfo, skipDeviceBinding } = options ?? {};
+
+    // Child device binding (app): two-step flow
+    if (user.role === UserRole.CHILD && !skipDeviceBinding) {
+      if (!deviceId) {
+        // Keep backward compatibility for non-app callers (e.g. WeChat bind, admin tools)
+        // by allowing login without device binding when deviceId is omitted.
+      } else {
+        const binding = await prisma.userDeviceBinding.findUnique({
+          where: { userId: user.id },
+          select: { deviceId: true },
+        });
+
+        if (!binding) {
+          const { passwordHash: _passwordHash, ...safeUser } = user;
+          return {
+            bindRequired: true as const,
+            bindToken: generateDeviceBindToken({ userId: user.id, deviceId }),
+            user: safeUser,
+          };
+        }
+
+        if (binding.deviceId !== deviceId) {
+          throw new HttpError(403, 'Device mismatch: please contact admin to reset device binding');
+        }
+
+        await prisma.userDeviceBinding.update({
+          where: { userId: user.id },
+          data: {
+            lastSeenAt: new Date(),
+            platform: deviceInfo?.platform,
+            model: deviceInfo?.model,
+            osVersion: deviceInfo?.osVersion,
+            appVersion: deviceInfo?.appVersion,
+          },
+        });
+      }
     }
 
     // 4. Generate Token
@@ -63,6 +114,73 @@ export class AuthService {
 
     const { passwordHash: _passwordHash, ...safeUser } = user;
     return { token, user: safeUser };
+  }
+
+  /**
+   * Confirm device binding using the bindToken returned from password login.
+   * - If not bound: create binding and return JWT.
+   * - If already bound to same device: idempotently returns JWT.
+   */
+  static async confirmDeviceBinding(params: { bindToken: string; deviceInfo?: DeviceInfo }) {
+    const decoded = verifyDeviceBindToken(params.bindToken);
+
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!user) throw new HttpError(404, 'User not found');
+    if (user.role !== UserRole.CHILD) throw new HttpError(403, 'Only child accounts can bind device in current version');
+    if (user.status === UserStatus.SUSPENDED) throw new HttpError(403, 'Account suspended');
+
+    // Activate on first successful login semantics: binding is allowed only after successful password check,
+    // but bind token could be confirmed later, so ensure user is ACTIVE.
+    if (user.status === UserStatus.INACTIVE) {
+      await prisma.user.update({ where: { id: user.id }, data: { status: UserStatus.ACTIVE } });
+    }
+
+    const existing = await prisma.userDeviceBinding.findUnique({
+      where: { userId: user.id },
+      select: { deviceId: true },
+    });
+
+    if (!existing) {
+      await prisma.userDeviceBinding.create({
+        data: {
+          userId: user.id,
+          deviceId: decoded.deviceId,
+          platform: params.deviceInfo?.platform,
+          model: params.deviceInfo?.model,
+          osVersion: params.deviceInfo?.osVersion,
+          appVersion: params.deviceInfo?.appVersion,
+          boundAt: new Date(),
+          lastSeenAt: new Date(),
+        },
+      });
+    } else if (existing.deviceId === decoded.deviceId) {
+      await prisma.userDeviceBinding.update({
+        where: { userId: user.id },
+        data: {
+          lastSeenAt: new Date(),
+          platform: params.deviceInfo?.platform,
+          model: params.deviceInfo?.model,
+          osVersion: params.deviceInfo?.osVersion,
+          appVersion: params.deviceInfo?.appVersion,
+        },
+      });
+    } else {
+      throw new HttpError(409, 'User is already bound to another device');
+    }
+
+    const token = generateToken({ userId: user.id, role: user.role, username: user.username });
+    return { token, user };
   }
 
   /**
@@ -171,7 +289,7 @@ export class AuthService {
     }
 
     // Verify credentials (and auto-activate if INACTIVE)
-    const loginResult = await this.login(params.username, params.password);
+    const loginResult = await this.login(params.username, params.password, undefined, { skipDeviceBinding: true });
 
     if (loginResult.user.role !== UserRole.CHILD) {
       throw new HttpError(403, 'Only child accounts can be bound to WeChat mini program in current version');

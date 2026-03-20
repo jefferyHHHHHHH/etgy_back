@@ -278,6 +278,21 @@ registerPath({
 });
 
 registerPath({
+	method: 'post',
+	path: '/api/users/children/{id}/reset-device-binding',
+	summary: '重置儿童设备绑定（平台管理员）',
+	tags: ['Users'],
+	security: [{ bearerAuth: [] }],
+	request: { params: idParamSchema },
+	responses: {
+		200: { description: 'Success', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
 	method: 'patch',
 	path: '/api/users/children/{id}/status',
 	summary: '更新儿童账号状态（平台管理员）',
@@ -467,6 +482,14 @@ router.post(
 	requirePermissions([Permission.USER_CHILD_MANAGE]),
 	validateParams(idParamSchema),
 	UserController.resetChildPassword
+);
+
+router.post(
+	'/children/:id/reset-device-binding',
+	requireRole([UserRole.PLATFORM_ADMIN]),
+	requirePermissions([Permission.USER_CHILD_MANAGE]),
+	validateParams(idParamSchema),
+	UserController.resetChildDeviceBinding
 );
 
 router.patch(
