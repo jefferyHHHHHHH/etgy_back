@@ -9,6 +9,8 @@
     "db:seed": "ts-node --files prisma/seed.ts",
     "db:bootstrap:accounts": "node -e \"require('ts-node').register({ files: true }); require('./scripts/bootstrap-accounts.ts');\"",
     "build": "tsc",
+    "swagger:json": "node -e \"require('ts-node').register({ files: true }); require('./scripts/generate-swagger-json.ts');\"",
+    "smoke:swagger": "node -e \"require('ts-node').register({ files: true }); require('./scripts/swagger-smoke.ts');\"",
     "smoke:moderation": "node -e \"require('ts-node').register({ files: true }); require('./scripts/moderation-smoke.ts');\"",
     "smoke:ai-tutor": "node -e \"require('ts-node').register({ files: true }); require('./scripts/ai-tutor-smoke.ts');\"",
     "smoke:device-binding": "node -e \"require('ts-node').register({ files: true }); require('./scripts/device-binding-smoke.ts');\"",

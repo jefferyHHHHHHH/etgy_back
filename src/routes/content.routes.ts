@@ -48,8 +48,34 @@ const listVideosQuerySchema = z.object({
 	pageSize: z.coerce.number().int().min(1).max(50).default(20),
 });
 
+// Admin list response: include presigned media urls for preview/play
+const videoMediaUrlsSchema = z
+	.object({
+		url: z.string().describe('Presigned GET URL for video object'),
+		coverUrl: z.string().nullable().describe('Presigned GET URL for cover image object'),
+		expiresInSeconds: z.number().int().nonnegative().describe('Presign expiration in seconds'),
+	})
+	.openapi('VideoMediaUrls');
+
+const adminVideoItemSchema = VideoSchema.extend({
+	mediaUrls: videoMediaUrlsSchema,
+}).openapi('AdminVideoItem');
+
+const adminVideoPagedResultSchema = z
+	.object({
+		items: z.array(adminVideoItemSchema),
+		total: z.number().int().nonnegative(),
+		page: z.number().int().positive(),
+		pageSize: z.number().int().positive(),
+	})
+	.openapi('AdminVideoPagedResult');
+
+
 const listMyVideosQuerySchema = z.object({
-	status: z.nativeEnum(VideoStatus).optional().describe('按视频状态筛选（如 REVIEW/REJECTED/APPROVED/PUBLISHED 等）'),
+	status: z
+		.union([z.nativeEnum(VideoStatus), z.literal('ALL')])
+		.optional()
+		.describe('按视频状态筛选（如 REVIEW/REJECTED/APPROVED/PUBLISHED 等）；传 ALL 表示不按状态筛选'),
 	search: z.string().optional().describe('按标题/简介模糊搜索（仅我的视频）'),
 	grade: z.string().optional(),
 	subject: z.string().optional(),
@@ -340,6 +366,7 @@ registerPath({
 	summary: '志愿者查看我的视频列表（可按状态筛选）',
 	tags: ['Videos'],
 	security: [{ bearerAuth: [] }],
+	description: '返回我的视频列表，并将每条视频的 url/coverUrl 自动转换为可播放的 presigned GET URL（便于前端直接预览/播放）。status=ALL 表示不按状态筛选。',
 	request: { query: listMyVideosQuerySchema },
 	responses: {
 		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(z.array(VideoSchema)) } } },
@@ -419,10 +446,10 @@ registerPath({
 	summary: '管理端视频列表（学院/平台管理员）',
 	tags: ['Videos'],
 	security: [{ bearerAuth: [] }],
-	description: '管理端使用：默认返回待审核(REVIEW)视频，可按 status/collegeId/uploaderId/search 等筛选。平台管理员可跨学院查看；学院管理员仅能查看本学院。',
+	description: '管理端使用：学院管理员默认返回待审核(REVIEW)视频；平台管理员默认返回全量状态视频。可按 status/collegeId/uploaderId/search 等筛选。返回结果会附带 video/cover 的 presigned GET URL（用于列表预览/播放）。',
 	request: { query: listVideosQuerySchema },
 	responses: {
-		200: { description: 'Success', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+		200: { description: 'Success', content: { 'application/json': { schema: apiResponse(adminVideoPagedResultSchema) } } },
 		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
 		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
 	},

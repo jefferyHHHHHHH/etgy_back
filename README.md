@@ -116,8 +116,11 @@
 - `PATCH /api/users/me/password`（修改自己的密码）
 
 视频管理端接口（用于审核列表/筛选/批量操作）：
-- `GET /api/videos/admin`（管理端视频列表，默认 status=REVIEW，可筛选）
+- `GET /api/videos/admin`（管理端视频列表：学院管理员默认 status=REVIEW；平台管理员默认全量状态；返回含 presigned video/cover URL 便于预览/播放）
 - `POST /api/videos/audit/batch`（学院管理员批量审核，抢先制；返回逐条结果）
+
+志愿者我的视频：
+- `GET /api/videos/mine`（返回我的视频列表；支持 `status=ALL` 表示全部状态；并将每条视频的 url/coverUrl 转换为 presigned GET URL 便于预览/播放）
 
 提示：Swagger UI 默认在 `http://<host>:<port>/api/docs/`。
 

@@ -75,8 +75,10 @@ export class ContentController {
 
       const { status, search, grade, subject, sort, page, pageSize } = req.query;
 
+      const statusFilter = status === 'ALL' ? undefined : (status as VideoStatus | undefined);
+
       const result = await ContentService.listVideos({
-        status: status as VideoStatus | undefined,
+        status: statusFilter,
         search: search as string | undefined,
         grade: grade as string | undefined,
         subject: subject as string | undefined,
@@ -88,10 +90,26 @@ export class ContentController {
         viewerCollegeId,
       });
 
+      // Volunteer list UX: presign url and coverUrl directly for immediate preview/play.
+      const itemsWithSignedUrls = await Promise.all(
+        result.items.map(async (video: any) => {
+          const [videoPlayable, coverPlayable] = await Promise.all([
+            OssService.getPlayableUrl({ keyOrUrl: video.url }),
+            video.coverUrl ? OssService.getPlayableUrl({ keyOrUrl: video.coverUrl }) : Promise.resolve(null),
+          ]);
+
+          return {
+            ...video,
+            url: videoPlayable.url,
+            coverUrl: coverPlayable ? coverPlayable.url : video.coverUrl,
+          };
+        })
+      );
+
       res.setHeader('X-Total-Count', String(result.total));
       res.setHeader('X-Page', String(result.page));
       res.setHeader('X-Page-Size', String(result.pageSize));
-      return res.json({ code: 200, message: 'Success', data: result.items });
+      return res.json({ code: 200, message: 'Success', data: itemsWithSignedUrls });
     } catch (error: any) {
       if (error instanceof HttpError) {
         return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
@@ -114,8 +132,11 @@ export class ContentController {
       const profile = await UserService.getUserProfile(user.userId);
       const viewerCollegeId = profile?.adminProfile?.collegeId ?? profile?.volunteerProfile?.collegeId ?? undefined;
 
-      // Admin default: pending review
-      const effectiveStatus = (status as VideoStatus | undefined) ?? VideoStatus.REVIEW;
+      // Default status differs by admin role:
+      // - College admin: focus on pending review by default
+      // - Platform admin: global management, default to ALL statuses
+      const effectiveStatus =
+        user.role === UserRole.PLATFORM_ADMIN ? (status as VideoStatus | undefined) : ((status as VideoStatus | undefined) ?? VideoStatus.REVIEW);
 
       const result = await ContentService.listVideos({
         status: effectiveStatus,
@@ -132,10 +153,32 @@ export class ContentController {
         viewerCollegeId,
       });
 
+      // Admin list UX: return presigned URLs for video and cover so UI can preview/play directly.
+      const itemsWithMediaUrls = await Promise.all(
+        result.items.map(async (video: any) => {
+          const [videoPlayable, coverPlayable] = await Promise.all([
+            OssService.getPlayableUrl({ keyOrUrl: video.url }),
+            video.coverUrl ? OssService.getPlayableUrl({ keyOrUrl: video.coverUrl }) : Promise.resolve(null),
+          ]);
+
+          return {
+            ...video,
+            mediaUrls: {
+              url: videoPlayable.url,
+              coverUrl: coverPlayable ? coverPlayable.url : null,
+              expiresInSeconds: Math.max(videoPlayable.expiresInSeconds || 0, coverPlayable?.expiresInSeconds || 0),
+            },
+          };
+        })
+      );
+
       return res.json({
         code: 200,
         message: 'Success',
-        data: result,
+        data: {
+          ...result,
+          items: itemsWithMediaUrls,
+        },
       });
     } catch (error: any) {
       if (error instanceof HttpError) {
