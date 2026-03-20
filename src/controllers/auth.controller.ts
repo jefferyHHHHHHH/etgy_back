@@ -25,8 +25,15 @@ export class AuthController {
         data: result,
       });
     } catch (error: any) {
-      const statusCode = error instanceof HttpError ? error.statusCode : 401;
-      return res.status(statusCode).json({ code: statusCode, message: error.message || 'Login failed' });
+	  // Important: do not mask unexpected server errors as 401.
+	  if (!(error instanceof HttpError)) {
+		  // eslint-disable-next-line no-console
+		  console.error('Unhandled error during login', { requestId: (req as any).requestId, error });
+		  return res.status(500).json({ code: 500, message: error?.message || 'Internal Server Error' });
+	  }
+
+	  const statusCode = error.statusCode;
+	  return res.status(statusCode).json({ code: statusCode, message: error.message || 'Login failed' });
     }
   }
 
