@@ -70,7 +70,7 @@ export class ContentController {
 	  res.setHeader('X-Page', String(result.page));
 	  res.setHeader('X-Page-Size', String(result.pageSize));
 
-	  const itemsWithSignedUrls = await Promise.all(result.items.map((v: any) => this.withSignedVideoUrls(v)));
+    const itemsWithSignedUrls = await Promise.all(result.items.map((v: any) => ContentController.withSignedVideoUrls(v)));
 	  res.json({ code: 200, message: 'Success', data: itemsWithSignedUrls });
     } catch (error: any) {
         if (error instanceof HttpError) {
@@ -174,7 +174,7 @@ export class ContentController {
       });
 
       // Admin list UX: presign url/coverUrl directly (and also keep mediaUrls for compatibility).
-      const itemsWithSignedUrls = await Promise.all(result.items.map((v: any) => this.withSignedVideoUrls(v)));
+    const itemsWithSignedUrls = await Promise.all(result.items.map((v: any) => ContentController.withSignedVideoUrls(v)));
 
       return res.json({
         code: 200,
@@ -282,7 +282,7 @@ export class ContentController {
         viewerCollegeId,
       });
 
-	  const signed = await this.withSignedVideoUrls(video);
+  	  const signed = await ContentController.withSignedVideoUrls(video);
 	  res.json({ code: 200, message: 'Success', data: signed });
     } catch (error: any) {
       if (error instanceof HttpError) {
@@ -307,7 +307,7 @@ export class ContentController {
         uploaderId: user.userId,
       });
 
-	  const signed = await this.withSignedVideoUrls(video);
+	  const signed = await ContentController.withSignedVideoUrls(video);
 	  return res.json({ code: 200, message: 'Success', data: signed });
     } catch (error: any) {
       if (error instanceof HttpError) {
