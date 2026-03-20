@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma';
+import { Prisma } from '@prisma/client';
 import { generateDeviceBindToken, generateToken, generateWechatBindToken, verifyDeviceBindToken, verifyWechatBindToken } from '../utils/token';
 // import { UserRole } from '@prisma/client';
 import { UserRole, UserStatus } from '../types/enums';
@@ -15,6 +16,13 @@ export type DeviceInfo = {
 };
 
 export class AuthService {
+  private static isMissingTable(err: unknown, tableName: string) {
+    if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
+    if (err.code !== 'P2021') return false;
+    const metaTable = (err.meta as any)?.table as string | undefined;
+    return metaTable === tableName || String(err.message || '').includes(tableName);
+  }
+
   /**
    * Password-based login
    */
@@ -74,24 +82,42 @@ export class AuthService {
         // Keep backward compatibility for non-app callers (e.g. WeChat bind, admin tools)
         // by allowing login without device binding when deviceId is omitted.
       } else {
-        const binding = await prisma.userDeviceBinding.findUnique({
-          where: { userId: user.id },
-          select: { deviceId: true },
-        });
-
-        if (!binding) {
-          const { passwordHash: _passwordHash, ...safeUser } = user;
-          return {
-            bindRequired: true as const,
-            bindToken: generateDeviceBindToken({ userId: user.id, deviceId }),
-            user: safeUser,
-          };
+        let bindingTableAvailable = true;
+        let binding: { deviceId: string } | null = null;
+        try {
+          binding = await prisma.userDeviceBinding.findUnique({
+            where: { userId: user.id },
+            select: { deviceId: true },
+          });
+        } catch (err) {
+          // If the DB schema is not synced (missing table), do NOT block login.
+          // This usually means the target DB didn't run `prisma db push` after schema update.
+          if (this.isMissingTable(err, 'UserDeviceBinding')) {
+            // eslint-disable-next-line no-console
+            console.warn('Device binding table missing; skip device binding checks. Please run `prisma db push` on the target DB.');
+            bindingTableAvailable = false;
+            binding = null;
+          } else {
+            throw err;
+          }
         }
 
-        if (binding.deviceId !== deviceId) {
-          throw new HttpError(403, 'Device mismatch: please contact admin to reset device binding');
-        }
+    // If table doesn't exist, we cannot enforce device binding. Allow login.
+    if (!bindingTableAvailable) {
+      // Root fix: sync DB schema so the table exists.
+    } else if (!binding) {
+      const { passwordHash: _passwordHash, ...safeUser } = user;
+      return {
+        bindRequired: true as const,
+        bindToken: generateDeviceBindToken({ userId: user.id, deviceId }),
+        user: safeUser,
+      };
+    } else {
+      if (binding.deviceId !== deviceId) {
+        throw new HttpError(403, 'Device mismatch: please contact admin to reset device binding');
+      }
 
+      try {
         await prisma.userDeviceBinding.update({
           where: { userId: user.id },
           data: {
@@ -102,6 +128,15 @@ export class AuthService {
             appVersion: deviceInfo?.appVersion,
           },
         });
+      } catch (err) {
+        if (this.isMissingTable(err, 'UserDeviceBinding')) {
+          // eslint-disable-next-line no-console
+          console.warn('Device binding table missing; skip updating lastSeenAt. Please run `prisma db push` on the target DB.');
+        } else {
+          throw err;
+        }
+      }
+    }
       }
     }
 
@@ -146,37 +181,52 @@ export class AuthService {
       await prisma.user.update({ where: { id: user.id }, data: { status: UserStatus.ACTIVE } });
     }
 
-    const existing = await prisma.userDeviceBinding.findUnique({
-      where: { userId: user.id },
-      select: { deviceId: true },
-    });
-
-    if (!existing) {
-      await prisma.userDeviceBinding.create({
-        data: {
-          userId: user.id,
-          deviceId: decoded.deviceId,
-          platform: params.deviceInfo?.platform,
-          model: params.deviceInfo?.model,
-          osVersion: params.deviceInfo?.osVersion,
-          appVersion: params.deviceInfo?.appVersion,
-          boundAt: new Date(),
-          lastSeenAt: new Date(),
-        },
-      });
-    } else if (existing.deviceId === decoded.deviceId) {
-      await prisma.userDeviceBinding.update({
+    let existing: { deviceId: string } | null = null;
+    try {
+      existing = await prisma.userDeviceBinding.findUnique({
         where: { userId: user.id },
-        data: {
-          lastSeenAt: new Date(),
-          platform: params.deviceInfo?.platform,
-          model: params.deviceInfo?.model,
-          osVersion: params.deviceInfo?.osVersion,
-          appVersion: params.deviceInfo?.appVersion,
-        },
+        select: { deviceId: true },
       });
-    } else {
-      throw new HttpError(409, 'User is already bound to another device');
+    } catch (err) {
+      if (this.isMissingTable(err, 'UserDeviceBinding')) {
+        throw new HttpError(500, 'Device binding table is missing in DB. Please run `prisma db push` (or apply migrations) on the target database.');
+      }
+      throw err;
+    }
+
+    try {
+      if (!existing) {
+        await prisma.userDeviceBinding.create({
+          data: {
+            userId: user.id,
+            deviceId: decoded.deviceId,
+            platform: params.deviceInfo?.platform,
+            model: params.deviceInfo?.model,
+            osVersion: params.deviceInfo?.osVersion,
+            appVersion: params.deviceInfo?.appVersion,
+            boundAt: new Date(),
+            lastSeenAt: new Date(),
+          },
+        });
+      } else if (existing.deviceId === decoded.deviceId) {
+        await prisma.userDeviceBinding.update({
+          where: { userId: user.id },
+          data: {
+            lastSeenAt: new Date(),
+            platform: params.deviceInfo?.platform,
+            model: params.deviceInfo?.model,
+            osVersion: params.deviceInfo?.osVersion,
+            appVersion: params.deviceInfo?.appVersion,
+          },
+        });
+      } else {
+        throw new HttpError(409, 'User is already bound to another device');
+      }
+    } catch (err) {
+      if (this.isMissingTable(err, 'UserDeviceBinding')) {
+        throw new HttpError(500, 'Device binding table is missing in DB. Please run `prisma db push` (or apply migrations) on the target database.');
+      }
+      throw err;
     }
 
     const token = generateToken({ userId: user.id, role: user.role, username: user.username });
