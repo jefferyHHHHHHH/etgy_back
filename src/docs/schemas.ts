@@ -84,6 +84,23 @@ export const LiveRoomSchema = z
 	})
 	.openapi('LiveRoom');
 
+export const LiveRoomPagedResultSchema = z
+	.object({
+		items: z.array(LiveRoomSchema),
+		total: z.number().int().nonnegative(),
+		page: z.number().int().positive(),
+		pageSize: z.number().int().positive(),
+	})
+	.openapi('LiveRoomPagedResult');
+
+export const LiveStreamInfoSchema = z
+	.object({
+		liveId: z.number().int().positive(),
+		pushUrl: z.string().nullable(),
+		pullUrl: z.string().nullable(),
+	})
+	.openapi('LiveStreamInfo');
+
 export const VideoCommentSchema = z
 	.object({
 		id: z.number().int(),

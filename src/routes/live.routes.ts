@@ -5,7 +5,7 @@ import { validateBody, validateParams, validateQuery } from '../middlewares/vali
 import { LiveController } from '../controllers/live.controller';
 import { LiveMessageType, LiveStatus, UserRole } from '../types/enums';
 import { apiResponse, BaseResponseSchema, ErrorResponseSchema, registerPath } from '../docs/openapi';
-import { LiveMessageSchema, LiveRoomSchema } from '../docs/schemas';
+import { LiveMessageSchema, LiveRoomPagedResultSchema, LiveRoomSchema, LiveStreamInfoSchema } from '../docs/schemas';
 
 const router = Router();
 
@@ -83,7 +83,7 @@ registerPath({
   tags: ['Live'],
   request: { query: listPublicLivesQuerySchema },
   responses: {
-    200: { description: 'OK', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+    200: { description: 'OK', content: { 'application/json': { schema: apiResponse(LiveRoomPagedResultSchema) } } },
   },
 });
 
@@ -108,7 +108,7 @@ registerPath({
   security: [{ bearerAuth: [] }],
   request: { query: listMineQuerySchema },
   responses: {
-    200: { description: 'OK', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+    200: { description: 'OK', content: { 'application/json': { schema: apiResponse(LiveRoomPagedResultSchema) } } },
     401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
     403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
@@ -122,7 +122,7 @@ registerPath({
   security: [{ bearerAuth: [] }],
   request: { query: listAdminQuerySchema },
   responses: {
-    200: { description: 'OK', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+    200: { description: 'OK', content: { 'application/json': { schema: apiResponse(LiveRoomPagedResultSchema) } } },
     401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
     403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
@@ -288,7 +288,7 @@ registerPath({
   security: [{ bearerAuth: [] }],
   request: { params: idParamSchema },
   responses: {
-    200: { description: 'OK', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+    200: { description: 'OK', content: { 'application/json': { schema: apiResponse(LiveStreamInfoSchema) } } },
     401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
     403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
     404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
