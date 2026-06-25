@@ -1,3 +1,4 @@
+import { Response } from 'express';
 import redisClient from '../config/redis';
 import { prisma } from '../config/prisma';
 import { env } from '../config/env';
@@ -6,6 +7,8 @@ import { HttpError } from '../utils/httpError';
 import { ModerationService } from './moderation.service';
 import { SparkService } from './spark.service';
 import { AuditService } from './audit.service';
+import { DifyService } from './dify.service';
+import { initSSE, sendSSEEvent, endSSE, startHeartbeat } from '../utils/sse';
 
 export type AiTutorMode = 'study' | 'emotion';
 
@@ -309,6 +312,278 @@ export class AiTutorService {
       risk: { triggered: false },
       answer: finalText,
     };
+  }
+
+  // ── Provider 判断 ─────────────────────────────────────────
+
+  private static useDify(): boolean {
+    return !!(env.DIFY_CHATFLOW_API_KEY?.trim());
+  }
+
+  // ── 风控开关（MVP 阶段全部返回 false，即关闭）────────────
+
+  private static moderationEnabled(): boolean {
+    return env.AI_TUTOR_MODERATION_ENABLED === true;
+  }
+
+  private static riskDetectionEnabled(): boolean {
+    return env.AI_TUTOR_RISK_DETECTION_ENABLED === true;
+  }
+
+  private static dailyLimitEnabled(): boolean {
+    return env.AI_TUTOR_DAILY_LIMIT_ENABLED === true;
+  }
+
+  private static auditEnabled(): boolean {
+    return env.AI_TUTOR_AUDIT_ENABLED === true;
+  }
+
+  // ── SSE 流式对话（MVP 核心）──────────────────────────────
+
+  /**
+   * SSE 流式 AI 辅导对话。
+   * MVP 阶段：只做基础校验 + Dify/Spark 调用。风控全部走开关，默认关闭。
+   */
+  static async chatStream(params: {
+    userId: number;
+    mode: AiTutorMode;
+    message: string;
+    conversationId?: number;
+    clientIp?: string;
+    res: Response;
+  }): Promise<void> {
+    const { res } = params;
+    const cfg = this.getConfig();
+
+    // ════════════════════════════════════════════════
+    // Phase A: 基础校验（可返回 JSON 错误）
+    // ════════════════════════════════════════════════
+
+    // A1. 开关
+    if (!cfg.enabled) {
+      throw new HttpError(403, 'AI 辅导暂未开启');
+    }
+
+    // A2. 角色
+    const user = await prisma.user.findUnique({
+      where: { id: params.userId },
+    });
+    if (!user) throw new HttpError(404, 'User not found');
+    if (user.role !== UserRole.CHILD) {
+      throw new HttpError(403, 'Only child accounts can use AI tutor');
+    }
+
+    // A3. 输入
+    const mode: AiTutorMode = params.mode === 'emotion' ? 'emotion' : 'study';
+    const textRaw = normalizeInput(params.message);
+    if (!textRaw) throw new HttpError(400, 'message 不能为空');
+    if (textRaw.length > cfg.maxInputLength) {
+      throw new HttpError(400, `message 长度不能超过 ${cfg.maxInputLength}`);
+    }
+
+    // A4. [开关] 每日限额
+    if (this.dailyLimitEnabled()) {
+      await this.enforceDailyLimit(params.userId);
+    }
+
+    // A5. [开关] 高危检测 — MVP 关闭，走正常对话路径
+    let riskText = textRaw;
+    if (this.riskDetectionEnabled()) {
+      const risk = detectHighRisk(riskText);
+      if (risk) {
+        // TODO: 开启后走本地安全回复（当前占位，直接 fallthrough 到正常对话）
+      }
+    }
+
+    // A6. [开关] 敏感词审核 — MVP 关闭，原文透传
+    if (this.moderationEnabled()) {
+      const moderated = await ModerationService.moderateOrThrow({
+        scene: 'live_qa',
+        text: riskText,
+      });
+      riskText = moderated.text;
+    }
+
+    // A7. 创建/查找会话
+    const modeEnum = toModeEnum(mode);
+    const conversation = await (async () => {
+      if (params.conversationId) {
+        const existing = await prisma.aiConversation.findUnique({
+          where: { id: params.conversationId },
+        });
+        if (!existing || existing.userId !== params.userId) {
+          throw new HttpError(404, 'conversation not found');
+        }
+        return existing;
+      }
+      return prisma.aiConversation.create({
+        data: { userId: params.userId, mode: modeEnum as any },
+      });
+    })();
+
+    // A8. 持久化用户消息
+    await prisma.aiMessage.create({
+      data: {
+        conversationId: conversation.id,
+        role: 'USER' as any,
+        content: riskText,
+      },
+    });
+
+    // ════════════════════════════════════════════════
+    // Phase B: 打开 SSE + 流式对话
+    // ════════════════════════════════════════════════
+
+    const existingDifyCid: string | undefined =
+      (conversation as any).difyConversationId || undefined;
+
+    let fullText = '';
+    let usageMeta: any = null;
+
+    initSSE(res);
+    const cleanupHeartbeat = startHeartbeat(res);
+
+    // 客户端断开 → 取消上游
+    const abortController = new AbortController();
+    const onClose = () => abortController.abort();
+    res.on('close', onClose);
+
+    try {
+      if (this.useDify()) {
+        // ── Dify 路径 ────────────────────────────────
+        const { stream, difyConversationId: newCid } = await DifyService.chatflowStream({
+          query: riskText,
+          user: String(params.userId),
+          conversationId: existingDifyCid,
+          inputs: { mode, 'userinput.query': riskText, 'userinput.files': [] },
+          signal: abortController.signal,
+        });
+
+        // 首次请求回填 Dify conversation_id
+        if (newCid && !existingDifyCid) {
+          await prisma.aiConversation.update({
+            where: { id: conversation.id },
+            data: { difyConversationId: newCid, provider: 'dify' },
+          });
+        }
+
+        // 逐 chunk 读取 Dify SSE → 透传
+        const reader = stream.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const parsed = JSON.parse(line.slice(6));
+                // 只处理 message / message_end / error 三种事件（MVP 最小集）
+                const evt = parsed.event;
+                if (evt === 'message' && parsed.answer) {
+                  fullText += parsed.answer;
+                  sendSSEEvent(res, 'text_chunk', { content: parsed.answer });
+                } else if (evt === 'message_end') {
+                  if (parsed.metadata?.usage) usageMeta = parsed.metadata.usage;
+                } else if (evt === 'error') {
+                  sendSSEEvent(res, 'error', {
+                    code: parsed.code || 'DIFY_ERROR',
+                    message: parsed.message || 'Dify workflow error',
+                  });
+                }
+                // workflow_started / node_started / ping / etc → 忽略
+              } catch { /* 非 JSON 行忽略 */ }
+            }
+          }
+        }
+      } else {
+        // ── Spark 降级路径 ───────────────────────────
+        const ctx = await prisma.aiMessage.findMany({
+          where: { conversationId: conversation.id },
+          orderBy: { id: 'desc' },
+          take: Math.max(0, cfg.contextMessages),
+        });
+
+        const messages = [
+          { role: 'system' as const, content: this.systemPrompt(mode) },
+          ...ctx.reverse().map((m) => ({
+            role: m.role === ('ASSISTANT' as any) ? ('assistant' as const)
+              : m.role === ('SYSTEM' as any) ? ('system' as const)
+              : ('user' as const),
+            content: m.content,
+          })),
+        ];
+
+        const resp = await SparkService.chatCompletions({
+          messages,
+          stream: false,
+          temperature: mode === 'emotion' ? 0.7 : 0.3,
+          max_tokens: 800,
+        });
+
+        const assistantText =
+          resp?.choices?.[0]?.message?.content ??
+          resp?.choices?.[0]?.delta?.content ??
+          resp?.choices?.[0]?.text ?? '';
+        fullText = normalizeInput(assistantText) || '我暂时没能生成回答，你可以换一种说法再问我一次。';
+
+        // 模拟逐字输出（保持前端 SSE 消费格式统一）
+        for (const char of fullText) {
+          sendSSEEvent(res, 'text_chunk', { content: char });
+        }
+      }
+
+      // ════════════════════════════════════════════════
+      // Phase C: 持久化 + 发送 text_complete
+      // ════════════════════════════════════════════════
+
+      sendSSEEvent(res, 'text_complete', {
+        full_text: fullText,
+        metadata: usageMeta || {},
+      });
+
+      // 持久化 AI 回复
+      if (fullText) {
+        await prisma.aiMessage.create({
+          data: {
+            conversationId: conversation.id,
+            role: 'ASSISTANT' as any,
+            content: fullText,
+          },
+        });
+      }
+
+      // [开关] 审计日志
+      if (this.auditEnabled()) {
+        await AuditService.log(
+          params.userId,
+          'CREATE' as any,
+          String(conversation.id),
+          'AiMessage',
+          `AI tutor streaming (mode=${mode}, provider=${this.useDify() ? 'dify' : 'spark'})`,
+          params.clientIp,
+        ).catch(() => {});
+      }
+
+    } catch (err: any) {
+      const errorMessage =
+        err instanceof HttpError ? err.message : 'AI 服务暂时不可用，请稍后再试';
+      sendSSEEvent(res, 'error', {
+        code: err instanceof HttpError ? String(err.statusCode) : 'UNKNOWN',
+        message: errorMessage,
+      });
+    } finally {
+      res.off('close', onClose);
+      cleanupHeartbeat();
+      sendSSEEvent(res, 'done', {});
+      endSSE(res);
+    }
   }
 
   static async listConversations(params: { userId: number; page: number; pageSize: number }) {

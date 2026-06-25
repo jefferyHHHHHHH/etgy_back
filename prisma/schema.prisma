@@ -453,12 +453,14 @@ enum AiRiskStatus {
 }
 
 model AiConversation {
-  id        Int         @id @default(autoincrement())
-  userId    Int
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  mode      AiTutorMode
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  id                 Int         @id @default(autoincrement())
+  userId             Int
+  user               User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mode               AiTutorMode
+  difyConversationId String?     // Dify 侧 conversation_id (UUID)
+  provider           String?     @default("spark") // "dify" | "spark"
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
   messages  AiMessage[]
   riskAlerts AiRiskAlert[]

@@ -44,6 +44,7 @@ export const getOpenApiDocument = (options?: { serverUrl?: string }) => {
 		{ name: 'OSS', description: 'Object storage (S3 compatible) helpers' },
 		{ name: 'Videos', description: 'Video content (list/detail/submit/audit/publish/offline)' },
 		{ name: 'Live', description: 'Live room (create/submit/audit)' },
+		{ name: 'AI', description: 'AI tutor, streaming chat & risk alerts' },
 		{ name: 'Meta', description: 'Dictionaries & misc metadata' },
 	];
 
@@ -51,7 +52,7 @@ export const getOpenApiDocument = (options?: { serverUrl?: string }) => {
 	// Swagger UI will safely ignore unknown extensions.
 	const xTagGroups = [
 		{ name: 'Core', tags: ['Auth', 'Users', 'Platform', 'OSS'] },
-		{ name: 'Content', tags: ['Videos', 'Live'] },
+		{ name: 'Content', tags: ['Videos', 'Live', 'AI'] },
 		{ name: 'Meta', tags: ['Meta'] },
 	];
 

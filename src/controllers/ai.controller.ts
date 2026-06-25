@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { HttpError } from '../utils/httpError';
+import { fail } from '../utils/response';
 import { AiTutorService } from '../services/aiTutor.service';
 import { UserService } from '../services/user.service';
 import { UserRole } from '../types/enums';
@@ -107,6 +108,32 @@ export class AiController {
     } catch (error: any) {
       const statusCode = error instanceof HttpError ? error.statusCode : 400;
       return res.status(statusCode).json({ code: statusCode, message: error.message || 'Handle risk alert failed' });
+    }
+  }
+
+  /**
+   * POST /api/ai/tutor/chat/stream
+   * SSE 流式 AI 辅导对话
+   */
+  static async chatTutorStream(req: Request, res: Response) {
+    try {
+      await AiTutorService.chatStream({
+        userId: req.user!.userId,
+        mode: req.body.mode,
+        message: req.body.message,
+        conversationId: req.body.conversationId,
+        clientIp: req.ip,
+        res,
+      });
+      // ★ service 已经直接操作 res 完成 SSE，此处不调用 res.json()
+    } catch (err: any) {
+      // SSE header 未发送时 = Phase A 校验错误，返回 JSON
+      if (!res.headersSent) {
+        if (err instanceof HttpError) {
+          return fail(res, err.message, err.statusCode);
+        }
+        return fail(res, 'Internal server error', 500);
+      }
     }
   }
 }

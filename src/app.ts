@@ -103,7 +103,14 @@ app.use(cors({
   origin: '*', // Configure properly in production
   credentials: true
 }));
-app.use(compression());
+app.use(compression({
+  filter: (req, _res) => {
+    // SSE 流式端点不能被压缩——压缩会缓冲整个响应体，阻塞打字机效果
+    if (req.path.startsWith('/api/ai/tutor/chat/stream')) return false;
+    if (req.headers.accept?.includes('text/event-stream')) return false;
+    return compression.filter(req, _res);
+  },
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -116,6 +123,7 @@ app.use(
     limit: env.RATE_LIMIT_MAX ?? (isProd ? 120 : 1000),
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => req.path === '/api/ai/tutor/chat/stream',
   })
 );
 

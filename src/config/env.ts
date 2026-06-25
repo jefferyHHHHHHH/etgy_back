@@ -76,6 +76,17 @@ const envSchema = z.object({
   SPARK_WS_API_KEY: z.string().optional(),
   SPARK_WS_API_SECRET: z.string().optional(),
 
+  // ========== Dify (AI orchestration) ==========
+  DIFY_BASE_URL: z.string().url().default('https://api.dify.ai/v1'),
+  DIFY_CHATFLOW_API_KEY: z.string().min(1).optional(),
+  DIFY_HTTP_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
+
+  // ========== AI Tutor 风控开关（MVP 阶段全部关闭，后续按需开启）==========
+  AI_TUTOR_MODERATION_ENABLED: z.coerce.boolean().default(false),
+  AI_TUTOR_RISK_DETECTION_ENABLED: z.coerce.boolean().default(false),
+  AI_TUTOR_DAILY_LIMIT_ENABLED: z.coerce.boolean().default(false),
+  AI_TUTOR_AUDIT_ENABLED: z.coerce.boolean().default(false),
+
   // AI tutor (child coaching)
   AI_TUTOR_ENABLED: z.coerce.boolean().default(true),
   AI_TUTOR_DAILY_LIMIT: z.coerce.number().int().min(1).default(5),

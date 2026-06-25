@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AiController } from '../controllers/ai.controller';
 import { authMiddleware, requireRole } from '../middlewares/auth.middleware';
 import { validateBody, validateParams, validateQuery } from '../middlewares/validate.middleware';
-import { apiResponse, registerPath } from '../docs/openapi';
+import { apiResponse, registerPath, ErrorResponseSchema } from '../docs/openapi';
 import { requirePermissions } from '../middlewares/permission.middleware';
 import { Permission } from '../types/permissions';
 import { UserRole } from '../types/enums';
@@ -266,6 +266,15 @@ router.post(
   AiController.chatTutor
 );
 
+// SSE 流式对话
+router.post(
+  '/tutor/chat/stream',
+  authMiddleware,
+  requireRole([UserRole.CHILD]),
+  validateBody(tutorChatBodySchema),
+  AiController.chatTutorStream,
+);
+
 router.get(
   '/tutor/conversations',
   authMiddleware,
@@ -300,5 +309,26 @@ router.patch(
   validateBody(handleRiskAlertBodySchema),
   AiController.handleRiskAlert
 );
+
+// SSE 流式对话 OpenAPI
+registerPath({
+  method: 'post',
+  path: '/api/ai/tutor/chat/stream',
+  summary: 'AI 辅导流式对话 (SSE)',
+  description:
+    '通过 SSE 协议实现打字机效果的流式 AI 对话。' +
+    '事件: text_chunk, text_complete, error, done。',
+  tags: ['AI'],
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: { content: { 'application/json': { schema: tutorChatBodySchema } } },
+  },
+  responses: {
+    200: { description: 'SSE 事件流 (text/event-stream)' },
+    400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
 
 export default router;
