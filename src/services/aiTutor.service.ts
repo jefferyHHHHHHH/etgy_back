@@ -283,19 +283,67 @@ export class AiTutorService {
         })),
     ];
 
-    // Call Spark HTTP (OpenAI-compatible)
-    const resp = await SparkService.chatCompletions({
-      messages,
-      stream: false,
-      temperature: mode === 'emotion' ? 0.7 : 0.3,
-      max_tokens: 800,
-    });
+    // ── Provider 路由：Dify 优先，Spark 降级 ─────
+    let assistantText = '';
+    const existingDifyCid: string | undefined = (conversation as any).difyConversationId || undefined;
 
-    const assistantText =
-      resp?.choices?.[0]?.message?.content ??
-      resp?.choices?.[0]?.delta?.content ??
-      resp?.choices?.[0]?.text ??
-      '';
+    if (this.useDify()) {
+      // ── Dify 路径 ────────────────────────────────
+      const { stream, difyConversationId: newCid } = await DifyService.chatflowStream({
+        query: moderated.text,
+        user: String(params.userId),
+        conversationId: existingDifyCid,
+        inputs: { mode, 'userinput.query': moderated.text, 'userinput.files': [] },
+      });
+
+      if (newCid && !existingDifyCid) {
+        await prisma.aiConversation.update({
+          where: { id: conversation.id },
+          data: { difyConversationId: newCid, provider: 'dify' },
+        });
+      }
+
+      // 消费 Dify SSE 流，拼接完整回答
+      const reader = stream.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const parsed = JSON.parse(line.slice(6));
+              const evt = parsed.event;
+              if (evt === 'message' && parsed.answer) {
+                assistantText += parsed.answer;
+              }
+              // message_end / error / ping 等 → 非流式场景仅关心消息正文
+            } catch { /* 非 JSON 行忽略 */ }
+          }
+        }
+      }
+    } else {
+      // ── Spark 降级路径 ───────────────────────────
+      const resp = await SparkService.chatCompletions({
+        messages,
+        stream: false,
+        temperature: mode === 'emotion' ? 0.7 : 0.3,
+        max_tokens: 800,
+      });
+
+      assistantText =
+        resp?.choices?.[0]?.message?.content ??
+        resp?.choices?.[0]?.delta?.content ??
+        resp?.choices?.[0]?.text ??
+        '';
+    }
 
     const finalText = normalizeInput(assistantText) || '我暂时没能生成回答，你可以换一种说法再问我一次。';
 
