@@ -81,7 +81,7 @@
 ### 4.4 互动与 AI (`Interaction & AI`)
 
 - **互动**: 点赞 (`interaction_likes`)，收藏。利用 Redis 缓冲处理高并发写入。
-- **AI 辅导**: 代理服务模式，后端过滤敏感词 -> 调用大模型 API -> 返回结果。
+- **AI 辅导**: 优先 Dify Chatflow SSE 流式对话，未配置则自动降级 Spark 非流式。风控（敏感词/高危检测/每日限额/审计）均通过环境变量开关控制。
 
 ## 5. 开发指南 (Development Guide)
 
@@ -154,20 +154,27 @@ WebSocket（需要签名 URL）：
 
 提示：示例配置见 `.env.example`，真实密钥只放在本机 `.env`，不要提交到 git。
 
-### 5.8 AI 辅导（落实 PRD：学习问题/情绪倾诉 + 风控告警）
+### 5.8 AI 辅导（SSE 流式 + Dify + 风控告警）
 
-本项目已实现“儿童 AI 辅导”最小闭环：
+本项目已实现”儿童 AI 辅导”完整闭环，支持两种 AI 后端：
 
-- **儿童对话**：限制每日次数、单次输入长度；命中高风险（自伤/极端暴力等）会返回预定义安全回应并生成告警。
-- **会话历史**：保存对话消息，供客户端拉取展示。
-- **风险告警**：学院/平台管理员可查看并标记处理（用于 PRD 的“自动通知学院”链路 MVP 落地）。
+**AI 后端优先级**：Dify (SSE 流式) > Spark (非流式降级)
 
-首次使用需要同步数据库与 Prisma Client：
-- `npm run db:generate`
-- `npm run db:push`
+- **Dify 路径**：配置 `DIFY_CHATFLOW_API_KEY` 后自动启用，通过 SSE 实现打字机效果逐 token 透传
+- **Spark 降级**：未配置 Dify 时自动回退到 Spark HTTP 非流式，后端模拟逐字输出保持前端 SSE 格式统一
+
+**SSE 事件协议**：
+
+| 事件 | 触发 | payload |
+|------|------|---------|
+| `text_chunk` | LLM 逐 token | `{ “content”: “同” }` |
+| `text_complete` | 回答结束 | `{ “full_text”: “...”, “metadata”: {...} }` |
+| `error` | 异常 | `{ “code”: “...”, “message”: “...” }` |
+| `done` | 流结束 | `{}` |
 
 儿童端接口：
-- `POST /api/ai/tutor/chat`（body: `{ mode: 'study'|'emotion', message, conversationId? }`）
+- `POST /api/ai/tutor/chat`（非流式，body: `{ mode: 'study'|'emotion', message, conversationId? }`）
+- `POST /api/ai/tutor/chat/stream`（**SSE 流式**，body 同上，Accept: text/event-stream）
 - `GET /api/ai/tutor/conversations`
 - `GET /api/ai/tutor/conversations/:id`
 
@@ -175,14 +182,55 @@ WebSocket（需要签名 URL）：
 - `GET /api/ai/risk-alerts`（学院管理员只看本学院；平台管理员可选 `collegeId` 筛选）
 - `PATCH /api/ai/risk-alerts/:id/handle`
 
-配置项：
+**Dify 配置**：
+- `DIFY_BASE_URL`（默认 `https://api.dify.ai/v1`）
+- `DIFY_CHATFLOW_API_KEY`（Chatflow API Key，配置后自动启用 Dify 路径）
+- `DIFY_HTTP_TIMEOUT_MS`（默认 60000ms）
+
+**风控开关**（默认全部关闭，生产环境按需开启）：
+
+| 功能 | 环境变量 | 设为 `true` 后的行为 |
+|------|----------|---------------------|
+| 每日限额 | `AI_TUTOR_DAILY_LIMIT_ENABLED=true` | Redis INCR 计数，超限返回 429 |
+| 高危检测 | `AI_TUTOR_RISK_DETECTION_ENABLED=true` | `detectHighRisk()` 拦截自伤/极端暴力 |
+| 敏感词过滤 | `AI_TUTOR_MODERATION_ENABLED=true` | `ModerationService.moderateOrThrow()` REJECT/MASK |
+| 审计日志 | `AI_TUTOR_AUDIT_ENABLED=true` | `AuditService.log()` 持久化操作记录 |
+
+基础配置项：
 - `AI_TUTOR_ENABLED` / `AI_TUTOR_DAILY_LIMIT` / `AI_TUTOR_MAX_INPUT_LENGTH` / `AI_TUTOR_CONTEXT_MESSAGES`
 
-说明：为实现“本学院告警可见”，`ChildProfile.collegeId` 已新增为可选字段；若未填写，告警默认只在平台侧可见。
+说明：为实现”本学院告警可见”，`ChildProfile.collegeId` 已新增为可选字段；若未填写，告警默认只在平台侧可见。
 
 备注：
 - `bindToken` 是后端签发的短期 JWT，仅用于一次绑定流程，不等同于登录态。
 - 绑定关系存储在 Prisma 模型 `WechatAccount` 中（provider=MINI_PROGRAM）。
+
+### 5.9 云服务器更新部署
+
+当本地推送新提交后，在云服务器上执行以下步骤更新后端：
+
+```bash
+# 1. 拉取最新代码
+cd /path/to/etgy_back
+git pull
+
+# 2. 安装依赖（如有新增 npm 包，否则跳过）
+npm install
+
+# 3. 同步数据库 schema + 重新生成 Prisma Client
+npx prisma db push
+npx prisma generate
+
+# 4. 编译检查（可选，CI 已通过可跳过）
+npx tsc --noEmit
+
+# 5. 重启后端服务（根据实际进程管理器选择）
+pm2 restart etgy_back
+# 或 Docker 部署：
+# docker compose up -d --build
+```
+
+> **提示**：如果只改动了业务逻辑代码（未改 schema / 未加依赖），只需执行步骤 1 + 5。
 
 ### 5.2 常用脚本
 
