@@ -207,6 +207,8 @@ WebSocket（需要签名 URL）：
 
 ### 5.9 云服务器更新部署
 
+> **⚠️ 重要**：PM2 生产环境运行的是编译后的 `dist/server.js`（即 `npm start`），不是 TypeScript 源码。**每次 `git pull` 后必须重新编译**，否则服务跑的还是旧代码！
+
 当本地推送新提交后，在云服务器上执行以下步骤更新后端：
 
 ```bash
@@ -217,20 +219,18 @@ git pull
 # 2. 安装依赖（如有新增 npm 包，否则跳过）
 npm install
 
-# 3. 同步数据库 schema + 重新生成 Prisma Client
+# 3. 同步数据库 schema + 重新生成 Prisma Client（如 schema 有变更）
 npx prisma db push
 npx prisma generate
 
-# 4. 编译检查（可选，CI 已通过可跳过）
-npx tsc --noEmit
+# 4. ★ 重新编译 TypeScript → dist/（必须执行！PM2 跑的是 dist/ 里的 JS）
+npm run build
 
-# 5. 重启后端服务（根据实际进程管理器选择）
+# 5. 重启服务
 pm2 restart etgy_back
-# 或 Docker 部署：
-# docker compose up -d --build
 ```
 
-> **提示**：如果只改动了业务逻辑代码（未改 schema / 未加依赖），只需执行步骤 1 + 5。
+> **提示**：如果只改动了纯逻辑代码（未改 schema / 未加依赖），步骤 2-3 可跳过，但步骤 1 + 4 + 5 缺一不可。
 
 ### 5.2 常用脚本
 
