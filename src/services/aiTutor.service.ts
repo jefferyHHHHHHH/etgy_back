@@ -285,64 +285,66 @@ export class AiTutorService {
 
     // ── Provider 路由：Dify 优先，Spark 降级 ─────
     let assistantText = '';
+    let usedDify = false;
     const existingDifyCid: string | undefined = (conversation as any).difyConversationId || undefined;
 
     if (this.useDify()) {
-      // ── Dify 路径 ────────────────────────────────
-      const { stream, difyConversationId: newCid } = await DifyService.chatflowStream({
-        query: moderated.text,
-        user: String(params.userId),
-        conversationId: existingDifyCid,
-        inputs: { mode, 'userinput.query': moderated.text, 'userinput.files': [] },
-      });
-
-      if (newCid && !existingDifyCid) {
-        await prisma.aiConversation.update({
-          where: { id: conversation.id },
-          data: { difyConversationId: newCid, provider: 'dify' },
+      try {
+        // ── Dify 路径 ────────────────────────────────
+        const { stream, difyConversationId: newCid } = await DifyService.chatflowStream({
+          query: moderated.text,
+          user: String(params.userId),
+          conversationId: existingDifyCid,
+          inputs: { mode, 'userinput.query': moderated.text, 'userinput.files': [] },
         });
-      }
 
-      // 消费 Dify SSE 流，拼接完整回答
-      const reader = stream.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
+        if (newCid && !existingDifyCid) {
+          await prisma.aiConversation.update({
+            where: { id: conversation.id },
+            data: { difyConversationId: newCid, provider: 'dify' },
+          });
+        }
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        // 消费 Dify SSE 流，拼接完整回答
+        const reader = stream.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const parsed = JSON.parse(line.slice(6));
-              const evt = parsed.event;
-              if (evt === 'message' && parsed.answer) {
-                assistantText += parsed.answer;
-              }
-              // message_end / error / ping 等 → 非流式场景仅关心消息正文
-            } catch { /* 非 JSON 行忽略 */ }
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const parsed = JSON.parse(line.slice(6));
+                const evt = parsed.event;
+                if (evt === 'message' && parsed.answer) {
+                  assistantText += parsed.answer;
+                }
+                // message_end / error / ping 等 → 非流式场景仅关心消息正文
+              } catch { /* 非 JSON 行忽略 */ }
+            }
           }
         }
+        usedDify = true;
+      } catch (difyError: any) {
+        // ── Dify 失败，降级到 Spark ──────────────────
+        console.warn('[AiTutor] Dify chatflow failed, falling back to Spark:', difyError?.message || difyError);
+        // 更新 provider 标记为降级
+        await prisma.aiConversation
+          .update({ where: { id: conversation.id }, data: { provider: 'spark' } })
+          .catch(() => {});
       }
-    } else {
-      // ── Spark 降级路径 ───────────────────────────
-      const resp = await SparkService.chatCompletions({
-        messages,
-        stream: false,
-        temperature: mode === 'emotion' ? 0.7 : 0.3,
-        max_tokens: 800,
-      });
+    }
 
-      assistantText =
-        resp?.choices?.[0]?.message?.content ??
-        resp?.choices?.[0]?.delta?.content ??
-        resp?.choices?.[0]?.text ??
-        '';
+    if (!usedDify) {
+      // ── Spark 路径（原始或降级）───────────────────
+      assistantText = await this.callSpark(messages, mode);
     }
 
     const finalText = normalizeInput(assistantText) || '我暂时没能生成回答，你可以换一种说法再问我一次。';
@@ -366,6 +368,29 @@ export class AiTutorService {
 
   private static useDify(): boolean {
     return !!(env.DIFY_CHATFLOW_API_KEY?.trim());
+  }
+
+  /**
+   * 调用星火大模型（Spark）生成回复。
+   * 用作 Dify 不可用时的降级方案。
+   */
+  private static async callSpark(
+    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+    mode: AiTutorMode
+  ): Promise<string> {
+    const resp = await SparkService.chatCompletions({
+      messages,
+      stream: false,
+      temperature: mode === 'emotion' ? 0.7 : 0.3,
+      max_tokens: 800,
+    });
+
+    return (
+      resp?.choices?.[0]?.message?.content ??
+      resp?.choices?.[0]?.delta?.content ??
+      resp?.choices?.[0]?.text ??
+      ''
+    );
   }
 
   // ── 风控开关（MVP 阶段全部返回 false，即关闭）────────────
@@ -497,61 +522,75 @@ export class AiTutorService {
     res.on('close', onClose);
 
     try {
+      let usedDify = false;
+
       if (this.useDify()) {
-        // ── Dify 路径 ────────────────────────────────
-        const { stream, difyConversationId: newCid } = await DifyService.chatflowStream({
-          query: riskText,
-          user: String(params.userId),
-          conversationId: existingDifyCid,
-          inputs: { mode, 'userinput.query': riskText, 'userinput.files': [] },
-          signal: abortController.signal,
-        });
-
-        // 首次请求回填 Dify conversation_id
-        if (newCid && !existingDifyCid) {
-          await prisma.aiConversation.update({
-            where: { id: conversation.id },
-            data: { difyConversationId: newCid, provider: 'dify' },
+        try {
+          // ── Dify 路径 ────────────────────────────────
+          const { stream, difyConversationId: newCid } = await DifyService.chatflowStream({
+            query: riskText,
+            user: String(params.userId),
+            conversationId: existingDifyCid,
+            inputs: { mode, 'userinput.query': riskText, 'userinput.files': [] },
+            signal: abortController.signal,
           });
-        }
 
-        // 逐 chunk 读取 Dify SSE → 透传
-        const reader = stream.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
+          // 首次请求回填 Dify conversation_id
+          if (newCid && !existingDifyCid) {
+            await prisma.aiConversation.update({
+              where: { id: conversation.id },
+              data: { difyConversationId: newCid, provider: 'dify' },
+            });
+          }
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+          // 逐 chunk 读取 Dify SSE → 透传
+          const reader = stream.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const parsed = JSON.parse(line.slice(6));
-                // 只处理 message / message_end / error 三种事件（MVP 最小集）
-                const evt = parsed.event;
-                if (evt === 'message' && parsed.answer) {
-                  fullText += parsed.answer;
-                  sendSSEEvent(res, 'text_chunk', { content: parsed.answer });
-                } else if (evt === 'message_end') {
-                  if (parsed.metadata?.usage) usageMeta = parsed.metadata.usage;
-                } else if (evt === 'error') {
-                  sendSSEEvent(res, 'error', {
-                    code: parsed.code || 'DIFY_ERROR',
-                    message: parsed.message || 'Dify workflow error',
-                  });
-                }
-                // workflow_started / node_started / ping / etc → 忽略
-              } catch { /* 非 JSON 行忽略 */ }
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const parsed = JSON.parse(line.slice(6));
+                  // 只处理 message / message_end / error 三种事件（MVP 最小集）
+                  const evt = parsed.event;
+                  if (evt === 'message' && parsed.answer) {
+                    fullText += parsed.answer;
+                    sendSSEEvent(res, 'text_chunk', { content: parsed.answer });
+                  } else if (evt === 'message_end') {
+                    if (parsed.metadata?.usage) usageMeta = parsed.metadata.usage;
+                  } else if (evt === 'error') {
+                    sendSSEEvent(res, 'error', {
+                      code: parsed.code || 'DIFY_ERROR',
+                      message: parsed.message || 'Dify workflow error',
+                    });
+                  }
+                  // workflow_started / node_started / ping / etc → 忽略
+                } catch { /* 非 JSON 行忽略 */ }
+              }
             }
           }
+          usedDify = true;
+        } catch (difyError: any) {
+          // ── Dify 失败，降级到 Spark ──────────────────
+          console.warn('[AiTutor] Dify SSE failed, falling back to Spark:', difyError?.message || difyError);
+          // 更新 provider 标记为降级
+          await prisma.aiConversation
+            .update({ where: { id: conversation.id }, data: { provider: 'spark' } })
+            .catch(() => {});
         }
-      } else {
-        // ── Spark 降级路径 ───────────────────────────
+      }
+
+      if (!usedDify) {
+        // ── Spark 路径（原始或降级）───────────────────
         const ctx = await prisma.aiMessage.findMany({
           where: { conversationId: conversation.id },
           orderBy: { id: 'desc' },
@@ -568,17 +607,7 @@ export class AiTutorService {
           })),
         ];
 
-        const resp = await SparkService.chatCompletions({
-          messages,
-          stream: false,
-          temperature: mode === 'emotion' ? 0.7 : 0.3,
-          max_tokens: 800,
-        });
-
-        const assistantText =
-          resp?.choices?.[0]?.message?.content ??
-          resp?.choices?.[0]?.delta?.content ??
-          resp?.choices?.[0]?.text ?? '';
+        const assistantText = await this.callSpark(messages, mode);
         fullText = normalizeInput(assistantText) || '我暂时没能生成回答，你可以换一种说法再问我一次。';
 
         // 模拟逐字输出（保持前端 SSE 消费格式统一）
