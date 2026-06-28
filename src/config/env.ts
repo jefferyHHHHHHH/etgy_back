@@ -87,6 +87,10 @@ const envSchema = z.object({
   AI_TUTOR_DAILY_LIMIT_ENABLED: z.coerce.boolean().default(false),
   AI_TUTOR_AUDIT_ENABLED: z.coerce.boolean().default(false),
 
+  // ========== Layer 2 NLP 审核 (AI 文本安全评估) ==========
+  LAYER2_NLP_URL: z.string().optional().default(''),
+  LAYER2_NLP_ENABLED: z.coerce.boolean().default(true),
+
   // AI tutor (child coaching)
   AI_TUTOR_ENABLED: z.coerce.boolean().default(true),
   AI_TUTOR_DAILY_LIMIT: z.coerce.number().int().min(1).default(5),

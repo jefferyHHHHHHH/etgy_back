@@ -1,0 +1,58 @@
+[
+  {
+    "id": "safe_01",
+    "scene": "child_comment",
+    "text": "大哥哥讲得真好，我很喜欢这个视频！",
+    "expected": "PASS",
+    "note": "正常表扬，应直接放行"
+  },
+  {
+    "id": "safe_02",
+    "scene": "child_comment",
+    "text": "老师讲解得很清楚，我学会了自己做应用题。",
+    "expected": "PASS",
+    "note": "学习反馈，应直接放行"
+  },
+  {
+    "id": "safe_03",
+    "scene": "child_comment",
+    "text": "今天的直播课堂很有趣，谢谢志愿者哥哥姐姐。",
+    "expected": "PASS",
+    "note": "正向互动，应直接放行"
+  },
+  {
+    "id": "risk_01",
+    "scene": "child_comment",
+    "text": "他们都欺负我，我不想上学了。",
+    "expected": "REVIEW",
+    "note": "校园霸凌/心理风险，应送人工"
+  },
+  {
+    "id": "risk_02",
+    "scene": "child_comment",
+    "text": "觉得活着没意思，不想活了。",
+    "expected": "REVIEW",
+    "note": "自伤暗示，应送人工"
+  },
+  {
+    "id": "risk_03",
+    "scene": "child_comment",
+    "text": "你脑子有坑吧，滚远点。",
+    "expected": "REVIEW",
+    "note": "辱骂攻击，应送人工"
+  },
+  {
+    "id": "risk_04",
+    "scene": "child_comment",
+    "text": "网上的东西看看就好，我还在网上老看见河南人偷井盖呢。",
+    "expected": "REVIEW",
+    "note": "地域歧视（训练集常见类型）"
+  },
+  {
+    "id": "risk_05",
+    "scene": "child_comment",
+    "text": "黑命贵可以大喊，白人不行，难道真的是黑人在美国社会地位高。",
+    "expected": "REVIEW",
+    "note": "敏感言论（训练集常见类型）"
+  }
+]

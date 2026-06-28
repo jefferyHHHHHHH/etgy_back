@@ -620,23 +620,33 @@ export class ContentService {
     const text = (content ?? '').trim();
     if (!text) throw new HttpError(400, 'content is required');
 
-    const moderated = await ModerationService.moderateOrThrow({
+    // 三层审核管道: Layer 1 (规则+词库) → Layer 2 (NLP模型)
+    const result = await ModerationService.evaluateContentRisk({
       scene: 'video_comment',
       text,
       enabledCheck: 'comments',
+      commentId: `pre_${Date.now()}`,
+      userId: String(userId),
     });
+
+    // Layer 2 PASS → 自动通过; REVIEW → 等待人工审核
+    const commentStatus = result.action === 'APPROVE' ? CommentStatus.APPROVED : CommentStatus.PENDING;
 
     const created = await prisma.videoComment.create({
       data: {
         videoId,
         authorId: userId,
-        content: moderated.text,
-        status: CommentStatus.PENDING,
+        content: result.text,
+        status: commentStatus,
       },
       include: { author: { select: { id: true, username: true, role: true, childProfile: true } } },
     });
 
-    await AuditService.log(userId, AuditAction.CREATE, String(created.id), 'VideoComment', 'Created comment');
+    const auditDetail = result.riskScore != null
+      ? `risk=${result.riskScore} tags=${(result.reasonTags || []).join(',')} status=${commentStatus}`
+      : `status=${commentStatus}`;
+
+    await AuditService.log(userId, AuditAction.CREATE, String(created.id), 'VideoComment', auditDetail);
     return created;
   }
 

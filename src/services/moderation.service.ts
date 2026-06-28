@@ -1,6 +1,8 @@
 import { prisma } from '../config/prisma';
-import { ModerationAction } from '../types/enums';
+import { CommentStatus, ModerationAction } from '../types/enums';
 import { HttpError } from '../utils/httpError';
+import { nlpCheck, nlpHealthCheck } from './nlpClient.service';
+import { env } from '../config/env';
 
 export type ContentScene = 'video_comment' | 'live_chat' | 'live_qa';
 
@@ -160,5 +162,114 @@ export class ModerationService {
   static bustCache() {
     this.policyCache = undefined;
     this.wordsCache = undefined;
+  }
+
+  /**
+   * 三层审核管道：Layer 1 (规则+词库) → Layer 2 (NLP模型) → Layer 3 (人工审核)
+   *
+   * 流程:
+   *   1. Layer 1: 敏感词匹配
+   *      - REJECT 模式 + 命中 → 直接拦截，返回 { action: 'REJECT' }
+   *      - MASK 模式 + 命中 → 脱敏后继续到 Layer 2
+   *      - 未命中 → 继续到 Layer 2
+   *   2. Layer 2: NLP 模型评估
+   *      - PASS → 返回 { action: 'APPROVE', text }
+   *      - REVIEW → 返回 { action: 'PENDING', text } 等待人工审核
+   *      - 服务不可用 → 降级为 PASS（避免阻塞用户）
+   *
+   * @returns moderation result with recommended CommentStatus
+   */
+  static async evaluateContentRisk(params: {
+    scene: ContentScene;
+    text: string;
+    enabledCheck?: 'comments' | 'liveChat';
+    commentId: string;
+    userId: string;
+  }): Promise<{
+    action: 'APPROVE' | 'PENDING';
+    text: string;
+    riskScore?: number;
+    reasonTags?: string[];
+  }>
+  {
+    // ========== Layer 1: 敏感词 + 规则过滤 ==========
+    const policy = await this.getPolicy();
+
+    if (params.enabledCheck === 'comments' && !policy.commentsEnabled) {
+      throw new HttpError(403, 'Comments are disabled by platform');
+    }
+    if (params.enabledCheck === 'liveChat' && !policy.liveChatEnabled) {
+      throw new HttpError(403, 'Live chat is disabled by platform');
+    }
+
+    let text = (params.text ?? '').trim();
+    if (!text) {
+      return { action: 'APPROVE', text };
+    }
+
+    const words = await this.getActiveWords();
+    let matchedWords: string[] = [];
+
+    if (words.length > 0) {
+      for (const w of words) {
+        if (!w) continue;
+        if (text.includes(w)) matchedWords.push(w);
+      }
+    }
+
+    // Layer 1 REJECT: 明显违规直接拦截
+    if (matchedWords.length > 0 && policy.moderationAction === ModerationAction.REJECT) {
+      throw new HttpError(400, 'Content contains sensitive words');
+    }
+
+    // Layer 1 MASK: 脱敏后继续下级审核
+    if (matchedWords.length > 0) {
+      for (const w of matchedWords) {
+        const replacementLen = Math.min(8, Math.max(3, w.length));
+        const replacement = '*'.repeat(replacementLen);
+        text = text.replace(new RegExp(escapeRegExp(w), 'g'), replacement);
+      }
+    }
+
+    // ========== Layer 2: NLP 模型初判 ==========
+    if (!env.LAYER2_NLP_ENABLED) {
+      // NLP 未启用时降级：全部放行到人工审核
+      return {
+        action: 'PENDING',
+        text,
+        reasonTags: matchedWords.length > 0 ? ['sensitive_word_masked'] : [],
+      };
+    }
+
+    const nlpResult = await nlpCheck({
+      commentId: params.commentId,
+      userId: params.userId,
+      text,
+      scene: params.scene,
+    });
+
+    if (!nlpResult) {
+      // NLP 服务不可用 → 降级策略：放行（记录日志，避免阻塞用户）
+      console.warn('[Moderation] Layer 2 NLP unavailable, falling back to PASS');
+      return {
+        action: 'APPROVE',
+        text,
+        reasonTags: matchedWords.length > 0 ? ['sensitive_word_masked', 'nlp_fallback'] : ['nlp_fallback'],
+      };
+    }
+
+    const nlpDecision: 'APPROVE' | 'PENDING' = nlpResult.decision === 'PASS' ? 'APPROVE' : 'PENDING';
+
+    // 合并 Layer 1 + Layer 2 的标签
+    const reasonTags: string[] = [];
+    if (matchedWords.length > 0) reasonTags.push('sensitive_word_masked');
+    reasonTags.push(...nlpResult.reason_tags.filter((t) => t !== 'none'));
+
+    return {
+      action: nlpDecision,
+      text,
+      riskScore: nlpResult.risk_score,
+      reasonTags,
+    };
   }
 }

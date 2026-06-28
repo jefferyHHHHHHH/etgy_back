@@ -615,6 +615,7 @@ export class LiveService {
 
     const type = params.type ?? LiveMessageType.CHAT;
 
+    // Layer 1: 敏感词过滤（直播暂不接入 Layer 2 NLP）
     const moderated = await ModerationService.moderateOrThrow({
       scene: type === LiveMessageType.QA ? 'live_qa' : 'live_chat',
       text,

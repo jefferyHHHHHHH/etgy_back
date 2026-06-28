@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+transformers
+torch
+pandas
+scikit-learn
+openpyxl
+datasets
+accelerate>=1.1.0
+fastapi
+uvicorn
+transformers
+torch
+pandas
+scikit-learn
+openpyxl
