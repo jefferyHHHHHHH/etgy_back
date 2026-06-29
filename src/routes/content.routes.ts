@@ -107,6 +107,12 @@ const listCommentsQuerySchema = z.object({
 	pageSize: z.coerce.number().int().min(1).max(50).default(20),
 });
 
+const listMyCommentsQuerySchema = z.object({
+	videoId: z.coerce.number().int().positive().optional().describe('按视频筛选我的评论'),
+	page: z.coerce.number().int().min(1).default(1),
+	pageSize: z.coerce.number().int().min(1).max(50).default(20),
+});
+
 const auditCommentBodySchema = z.object({
 	pass: z.coerce.boolean(),
 	reason: z.string().optional(),
@@ -325,6 +331,19 @@ registerPath({
 		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
 		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
 		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'get',
+	path: '/api/videos/comments/mine',
+	summary: '获取我的评论列表（含待审核/未通过/已通过）',
+	tags: ['Videos'],
+	security: [{ bearerAuth: [] }],
+	request: { query: listMyCommentsQuerySchema },
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(z.array(VideoCommentSchema)) } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
 	},
 });
 
@@ -676,6 +695,12 @@ router.post(
 	requirePermissions([Permission.VIDEO_REVIEW]),
 	validateBody(auditBatchBodySchema),
 	ContentController.auditVideosBatch
+);
+
+router.get(
+	'/comments/mine',
+	validateQuery(listMyCommentsQuerySchema),
+	ContentController.listMyVideoComments
 );
 
 router.get(

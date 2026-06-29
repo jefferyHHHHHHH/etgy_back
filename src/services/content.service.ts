@@ -650,6 +650,37 @@ export class ContentService {
     return created;
   }
 
+  static async listMyVideoComments(params: {
+    userId: number;
+    videoId?: number;
+    page: number;
+    pageSize: number;
+  }) {
+    const page = Math.max(params.page || 1, 1);
+    const pageSize = Math.min(Math.max(params.pageSize || 20, 1), 50);
+    const skip = (page - 1) * pageSize;
+
+    const where: { authorId: number; videoId?: number } = { authorId: params.userId };
+    if (params.videoId) {
+      where.videoId = params.videoId;
+    }
+
+    const [total, items] = await Promise.all([
+      prisma.videoComment.count({ where }),
+      prisma.videoComment.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip,
+        take: pageSize,
+        include: {
+          author: { select: { id: true, username: true, role: true, childProfile: true } },
+        },
+      }),
+    ]);
+
+    return { items, total, page, pageSize };
+  }
+
   static async listVideoComments(params: {
     videoId: number;
     viewerRole?: UserRole;

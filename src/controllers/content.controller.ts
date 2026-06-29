@@ -503,6 +503,28 @@ export class ContentController {
     }
   }
 
+  static async listMyVideoComments(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const result = await ContentService.listMyVideoComments({
+        userId: user.userId,
+        videoId: req.query.videoId ? Number(req.query.videoId) : undefined,
+        page: req.query.page ? Number(req.query.page) : 1,
+        pageSize: req.query.pageSize ? Number(req.query.pageSize) : 20,
+      });
+
+      res.setHeader('X-Total-Count', String(result.total));
+      res.setHeader('X-Page', String(result.page));
+      res.setHeader('X-Page-Size', String(result.pageSize));
+      return res.json({ code: 200, message: 'Success', data: result.items });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
   static async listVideoComments(req: Request, res: Response) {
     try {
       const { id } = req.params;
