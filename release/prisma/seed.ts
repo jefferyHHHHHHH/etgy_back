@@ -1,5 +1,6 @@
 import { PrismaClient, UserRole, UserStatus, Gender, VolunteerStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { encryptPassword } from '../src/utils/passwordCipher';
 
 const prisma = new PrismaClient();
 
@@ -17,6 +18,7 @@ async function main() {
 
   const defaultPassword = 'Passw0rd!';
   const passwordHash = await bcrypt.hash(defaultPassword, 10);
+  const passwordEnc = encryptPassword(defaultPassword);
 
   // 2) Platform admin (global)
   await prisma.user.upsert({
@@ -43,6 +45,7 @@ async function main() {
     create: {
       username: 'college_admin',
       passwordHash,
+      passwordEnc,
       role: UserRole.COLLEGE_ADMIN,
       status: UserStatus.ACTIVE,
       adminProfile: {
@@ -61,6 +64,7 @@ async function main() {
     create: {
       username: 'volunteer_001',
       passwordHash,
+      passwordEnc,
       role: UserRole.VOLUNTEER,
       status: UserStatus.ACTIVE,
       volunteerProfile: {
@@ -82,6 +86,7 @@ async function main() {
     create: {
       username: 'child_001',
       passwordHash,
+      passwordEnc,
       role: UserRole.CHILD,
       status: UserStatus.ACTIVE,
       childProfile: {

@@ -55,13 +55,22 @@ export class PlatformController {
 
   static async listCollegeAdmins(req: Request, res: Response) {
     try {
-      const collegeId = req.query.collegeId ? Number(req.query.collegeId) : undefined;
+      const collegeIdRaw = req.query.collegeId;
+      let collegeId: number | undefined;
+      if (collegeIdRaw !== undefined && collegeIdRaw !== '') {
+        collegeId = Number(collegeIdRaw);
+        if (!Number.isFinite(collegeId) || collegeId <= 0) {
+          throw new HttpError(400, 'collegeId must be a positive integer');
+        }
+      }
+
       const list = await PlatformService.listCollegeAdminAccounts(collegeId);
       return res.json({ code: 200, message: 'Success', data: list });
     } catch (error: any) {
       if (error instanceof HttpError) {
         return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
       }
+      console.error('[listCollegeAdmins]', error);
       return res.status(500).json({ code: 500, message: error?.message || 'Internal Server Error' });
     }
   }

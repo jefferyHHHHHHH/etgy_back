@@ -3,7 +3,8 @@ import bcrypt from 'bcryptjs';
 import { AuditAction, LiveStatus, ModerationAction, UserRole, UserStatus, VideoStatus } from '../types/enums';
 import { HttpError } from '../utils/httpError';
 import { ModerationService } from './moderation.service';
-import { decryptPassword, encryptPassword } from '../utils/passwordCipher';
+import { encryptPassword } from '../utils/passwordCipher';
+import { revealStoredPasswordWithHashCheck } from '../utils/passwordReveal';
 
 export class PlatformService {
   private static generateTempPassword(len: number = 10) {
@@ -137,27 +138,13 @@ export class PlatformService {
   static async getCollegeAdminPassword(collegeAdminUserId: number) {
     const user = await prisma.user.findUnique({
       where: { id: collegeAdminUserId },
-      select: { id: true, role: true, passwordEnc: true },
+      select: { id: true, role: true, passwordEnc: true, passwordHash: true },
     });
     if (!user) throw new HttpError(404, 'User not found');
     if (user.role !== UserRole.COLLEGE_ADMIN) throw new HttpError(400, '目标用户不是学院管理员');
 
-    if (user.passwordEnc) {
-      try {
-        const password = decryptPassword(user.passwordEnc);
-        return { userId: user.id, password };
-      } catch {
-        // Fall through to reset if payload is corrupted / key rotated.
-      }
-    }
-
-    const tempPassword = this.generateTempPassword(10);
-    const passwordHash = await bcrypt.hash(tempPassword, 10);
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { passwordHash, passwordEnc: encryptPassword(tempPassword) },
-    });
-    return { userId: user.id, password: tempPassword, regenerated: true };
+    const password = await revealStoredPasswordWithHashCheck(user.passwordEnc, user.passwordHash);
+    return { userId: user.id, password };
   }
 
   static async setCollegeAdminPassword(collegeAdminUserId: number, newPassword: string) {

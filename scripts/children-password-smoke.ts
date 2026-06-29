@@ -4,7 +4,7 @@ Smoke test for child password reveal/change flow.
 Coverage:
 - Platform admin login
 - Default children list returns password as '****' (and should not leak passwordHash)
-- GET /api/children/:id/password returns real password (or auto-regenerated for legacy rows)
+- GET /api/children/:id/password returns real password
 - POST /api/children/:id/password updates password
 - GET again returns updated password
 
@@ -128,7 +128,7 @@ async function main() {
       assert(revealed === originalPassword, `expected revealed==original for newly created user. revealed=${revealed}`);
     }
 
-    console.log('Reveal OK:', { childId, regenerated: reveal1.json?.data?.regenerated === true });
+    console.log('Reveal OK:', { childId });
 
     // 4) Change password
     const newPassword = `NewPassw0rd!_${Math.floor(Math.random() * 1000)}`;

@@ -3,7 +3,8 @@ import { prisma } from '../config/prisma';
 import { UserRole, UserStatus, VolunteerStatus, Gender } from '../types/enums';
 import bcrypt from 'bcryptjs';
 import { HttpError } from '../utils/httpError';
-import { decryptPassword, encryptPassword } from '../utils/passwordCipher';
+import { encryptPassword } from '../utils/passwordCipher';
+import { ROLES_WITH_RECOVERABLE_PASSWORD, revealStoredPasswordWithHashCheck } from '../utils/passwordReveal';
 
 export class UserService {
 
@@ -397,7 +398,9 @@ export class UserService {
       where: { id: userId },
       data: {
         passwordHash,
-        ...(user.role === UserRole.CHILD ? { passwordEnc: encryptPassword(newPassword) } : {}),
+        ...(ROLES_WITH_RECOVERABLE_PASSWORD.has(user.role as UserRole)
+          ? { passwordEnc: encryptPassword(newPassword) }
+          : {}),
       },
     });
 
@@ -520,7 +523,7 @@ export class UserService {
       where: { userId: volunteerUserId },
       select: {
         collegeId: true,
-        user: { select: { id: true, role: true, passwordEnc: true } },
+        user: { select: { id: true, role: true, passwordEnc: true, passwordHash: true } },
       },
     });
     if (!scoped) throw new HttpError(404, 'Volunteer not found');
@@ -531,23 +534,8 @@ export class UserService {
       if (scoped.collegeId !== operatorCollegeId) throw new HttpError(403, 'Forbidden: cross-college access');
     }
 
-    if (scoped.user.passwordEnc) {
-      try {
-        const password = decryptPassword(scoped.user.passwordEnc);
-        return { userId: scoped.user.id, password };
-      } catch {
-        // fall through
-      }
-    }
-
-    const tempPassword = this.generateTempPassword(10);
-    const passwordHash = await bcrypt.hash(tempPassword, 10);
-    await prisma.user.update({
-      where: { id: scoped.user.id },
-      data: { passwordHash, passwordEnc: encryptPassword(tempPassword) },
-    });
-
-    return { userId: scoped.user.id, password: tempPassword, regenerated: true };
+    const password = await revealStoredPasswordWithHashCheck(scoped.user.passwordEnc, scoped.user.passwordHash);
+    return { userId: scoped.user.id, password };
   }
 
   static async setVolunteerPassword(params: {
@@ -663,28 +651,13 @@ export class UserService {
   static async getChildPassword(childUserId: number) {
     const user = await prisma.user.findUnique({
       where: { id: childUserId },
-      select: { id: true, role: true, passwordEnc: true },
+      select: { id: true, role: true, passwordEnc: true, passwordHash: true },
     });
     if (!user) throw new HttpError(404, 'User not found');
     if (user.role !== UserRole.CHILD) throw new HttpError(400, 'Target user is not a child');
 
-    if (user.passwordEnc) {
-      try {
-        const password = decryptPassword(user.passwordEnc);
-        return { userId: user.id, password };
-      } catch {
-        // Fall through to reset if payload is corrupted / key rotated.
-      }
-    }
-
-    // Legacy/corrupted rows: cannot recover from hash, generate a new temp password.
-    const tempPassword = this.generateTempPassword(10);
-    const passwordHash = await bcrypt.hash(tempPassword, 10);
-    await prisma.user.update({
-      where: { id: childUserId },
-      data: { passwordHash, passwordEnc: encryptPassword(tempPassword) },
-    });
-    return { userId: user.id, password: tempPassword, regenerated: true };
+    const password = await revealStoredPasswordWithHashCheck(user.passwordEnc, user.passwordHash);
+    return { userId: user.id, password };
   }
 
   static async setChildPassword(childUserId: number, newPassword: string) {

@@ -5,7 +5,7 @@ Coverage:
 - Unauth blocked
 - Platform admin login
 - GET /api/platform/college-admins returns password as '****' and should not leak passwordHash
-- GET /api/platform/college-admins/:id/password reveals real password (or auto-regenerated for legacy rows)
+- GET /api/platform/college-admins/:id/password reveals real password
 - POST /api/platform/college-admins/:id/password updates password
 - GET again returns updated password
 
@@ -149,7 +149,7 @@ async function main() {
       assert(revealed === originalPassword, `expected revealed==original for newly created user. revealed=${revealed}`);
     }
 
-    console.log('Reveal OK:', { adminId, regenerated: reveal1.json?.data?.regenerated === true });
+    console.log('Reveal OK:', { adminId });
 
     // 4) Change password
     const newPassword = `NewPassw0rd!_${Math.floor(Math.random() * 1000)}`;

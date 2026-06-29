@@ -5,7 +5,7 @@ Coverage:
 - Unauth blocked
 - Platform admin login
 - Create a volunteer if none
-- GET /api/users/volunteers/:id/password reveals password (or auto-regenerated for legacy rows)
+- GET /api/users/volunteers/:id/password reveals password
 - POST /api/users/volunteers/:id/password updates password
 - GET again returns updated password
 
@@ -99,6 +99,7 @@ async function main() {
 
     // 2) List volunteers and pick one
     let volunteerUserId: number | null = null;
+    let volunteerUsername: string | null = null;
     let originalPassword: string | null = null;
 
     const list1 = await http(baseUrl, 'GET', '/api/users/volunteers?page=1&pageSize=1', undefined, token);
@@ -110,7 +111,9 @@ async function main() {
     if (items1.length > 0) {
       const v = items1[0];
       volunteerUserId = Number(v?.userId ?? v?.user?.id);
+      volunteerUsername = String(v?.user?.username ?? '');
       assert(volunteerUserId > 0, `expected volunteer user id, got: ${JSON.stringify(v)}`);
+      assert(volunteerUsername, `expected volunteer username, got: ${JSON.stringify(v)}`);
     } else {
       originalPassword = `Passw0rd!_${Math.floor(Math.random() * 1000)}`;
       const username = rand('volunteer_smoke');
@@ -132,6 +135,7 @@ async function main() {
 
       assert(created.status === 201, `create volunteer expected 201, got ${created.status}: ${JSON.stringify(created.json)}`);
       volunteerUserId = Number(created.json?.data?.id);
+      volunteerUsername = String(created.json?.data?.username ?? username);
       assert(volunteerUserId > 0, `create volunteer missing id: ${JSON.stringify(created.json)}`);
 
       // Ensure create response does not leak encrypted payloads
@@ -155,7 +159,7 @@ async function main() {
       assert(revealed === originalPassword, `expected revealed==original for newly created user. revealed=${revealed}`);
     }
 
-    console.log('Reveal OK:', { volunteerUserId, regenerated: reveal1.json?.data?.regenerated === true });
+    console.log('Reveal OK:', { volunteerUserId });
 
     // 4) Change password
     const newPassword = `NewPassw0rd!_${Math.floor(Math.random() * 1000)}`;
@@ -172,6 +176,33 @@ async function main() {
     const reveal2 = await http(baseUrl, 'GET', `/api/users/volunteers/${volunteerUserId}/password`, undefined, token);
     assert(reveal2.status === 200, `reveal2 expected 200, got ${reveal2.status}: ${JSON.stringify(reveal2.json)}`);
     assert(reveal2.json?.data?.password === newPassword, `expected revealed password == newPassword, got: ${JSON.stringify(reveal2.json)}`);
+
+    // 5b) Volunteer self-service password change should keep admin reveal in sync
+    const selfChangedPassword = `SelfPassw0rd!_${Math.floor(Math.random() * 1000)}`;
+    const volunteerLogin = await http(baseUrl, 'POST', '/api/auth/login', {
+      username: volunteerUsername,
+      password: newPassword,
+    });
+    assert(volunteerLogin.status === 200, `volunteer login expected 200, got ${volunteerLogin.status}: ${JSON.stringify(volunteerLogin.json)}`);
+
+    const volunteerToken = volunteerLogin.json?.data?.token;
+    assert(volunteerToken, `volunteer login missing token: ${JSON.stringify(volunteerLogin.json)}`);
+
+    const selfChange = await http(
+      baseUrl,
+      'PATCH',
+      '/api/users/me/password',
+      { oldPassword: newPassword, newPassword: selfChangedPassword },
+      volunteerToken
+    );
+    assert(selfChange.status === 200, `self change password expected 200, got ${selfChange.status}: ${JSON.stringify(selfChange.json)}`);
+
+    const revealSelf = await http(baseUrl, 'GET', `/api/users/volunteers/${volunteerUserId}/password`, undefined, token);
+    assert(revealSelf.status === 200, `reveal after self-change expected 200, got ${revealSelf.status}: ${JSON.stringify(revealSelf.json)}`);
+    assert(
+      revealSelf.json?.data?.password === selfChangedPassword,
+      `expected revealed password == selfChangedPassword, got: ${JSON.stringify(revealSelf.json)}`
+    );
 
     // 6) Restore original (best-effort)
     const restoreTo = revealed;
