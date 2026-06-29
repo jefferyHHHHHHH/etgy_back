@@ -36,6 +36,10 @@
       "description": "Live room (create/submit/audit)"
     },
     {
+      "name": "AI",
+      "description": "AI tutor, streaming chat & risk alerts"
+    },
+    {
       "name": "Meta",
       "description": "Dictionaries & misc metadata"
     }
@@ -54,7 +58,8 @@
       "name": "Content",
       "tags": [
         "Videos",
-        "Live"
+        "Live",
+        "AI"
       ]
     },
     {
@@ -292,6 +297,89 @@
           "status",
           "createdAt",
           "updatedAt"
+        ]
+      },
+      "AdminVideoCommentPagedResult": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminVideoCommentItem"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "AdminVideoCommentItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/VideoComment"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "video": {
+                "$ref": "#/components/schemas/AdminVideoCommentVideo"
+              }
+            },
+            "required": [
+              "video"
+            ]
+          }
+        ]
+      },
+      "AdminVideoCommentVideo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "collegeId": {
+            "type": "integer"
+          },
+          "college": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "collegeId"
         ]
       },
       "VideoWatchLog": {
@@ -4287,6 +4375,234 @@
           },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/videos/comments/admin": {
+      "get": {
+        "summary": "管理端评论审核列表（学院/平台管理员）",
+        "tags": [
+          "Videos"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "跨视频聚合的评论审核队列。学院管理员默认仅本学院视频下的评论；平台管理员可全局查看并按 collegeId 筛选。默认 status=PENDING。",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "APPROVED",
+                "REJECTED"
+              ],
+              "description": "默认 PENDING（待审核队列）"
+            },
+            "required": false,
+            "description": "默认 PENDING（待审核队列）",
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "exclusiveMinimum": true,
+              "description": "平台管理员可按学院筛选"
+            },
+            "required": false,
+            "description": "平台管理员可按学院筛选",
+            "name": "collegeId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "exclusiveMinimum": true
+            },
+            "required": false,
+            "name": "videoId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "搜索评论内容或视频标题"
+            },
+            "required": false,
+            "description": "搜索评论内容或视频标题",
+            "name": "search",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/BaseResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/AdminVideoCommentPagedResult"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/videos/comments/audit/batch": {
+      "post": {
+        "summary": "批量审核评论（学院/平台管理员）",
+        "tags": [
+          "Videos"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "exclusiveMinimum": true
+                    },
+                    "minItems": 1
+                  },
+                  "pass": {
+                    "type": "boolean",
+                    "nullable": true
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "ids"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/BaseResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "nullable": true
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -10282,6 +10598,87 @@
                       ]
                     }
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/tutor/chat/stream": {
+      "post": {
+        "summary": "AI 辅导流式对话 (SSE)",
+        "description": "通过 SSE 协议实现打字机效果的流式 AI 对话。事件: text_chunk, text_complete, error, done。",
+        "tags": [
+          "AI"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "study",
+                      "emotion"
+                    ],
+                    "default": "study"
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "conversationId": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true
+                  }
+                },
+                "required": [
+                  "message"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SSE 事件流 (text/event-stream)"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

@@ -1,6 +1,6 @@
 import { prisma } from '../config/prisma';
 import bcrypt from 'bcryptjs';
-import { AuditAction, LiveStatus, ModerationAction, UserRole, UserStatus, VideoStatus } from '../types/enums';
+import { AuditAction, CommentStatus, LiveStatus, ModerationAction, UserRole, UserStatus, VideoStatus } from '../types/enums';
 import { HttpError } from '../utils/httpError';
 import { ModerationService } from './moderation.service';
 import { encryptPassword } from '../utils/passwordCipher';
@@ -332,12 +332,17 @@ export class PlatformService {
 
     const videoWhere: any = scopedCollegeId ? { collegeId: scopedCollegeId } : {};
     const liveWhere: any = scopedCollegeId ? { collegeId: scopedCollegeId } : {};
+    const commentWhere: any = {
+      status: CommentStatus.PENDING,
+      ...(scopedCollegeId ? { video: { collegeId: scopedCollegeId } } : {}),
+    };
 
     const [
       videoTotal,
       liveTotal,
       videoByStatus,
       liveByStatus,
+      commentPendingReview,
       todayNewVideos,
       todayNewLives,
       volunteerCount,
@@ -346,6 +351,7 @@ export class PlatformService {
       prisma.liveRoom.count({ where: liveWhere }),
       prisma.video.groupBy({ by: ['status'], where: videoWhere, _count: { _all: true } }),
       prisma.liveRoom.groupBy({ by: ['status'], where: liveWhere, _count: { _all: true } }),
+      prisma.videoComment.count({ where: commentWhere }),
       prisma.video.count({ where: { ...videoWhere, createdAt: { gte: startOfToday } } }),
       prisma.liveRoom.count({ where: { ...liveWhere, createdAt: { gte: startOfToday } } }),
       prisma.volunteerProfile.count({
@@ -400,6 +406,9 @@ export class PlatformService {
         passed: livePassed,
         published: livePublished,
         living: liveLiving,
+      },
+      comment: {
+        pendingReview: commentPendingReview,
       },
     };
   }

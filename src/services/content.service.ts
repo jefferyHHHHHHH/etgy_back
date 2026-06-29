@@ -705,6 +705,79 @@ export class ContentService {
     return { items, total, page, pageSize };
   }
 
+  /**
+   * Admin comment queue: cross-video pending (or filtered) comments for review.
+   * - College admin: scoped to own college videos
+   * - Platform admin: global, optional collegeId filter
+   */
+  static async listAdminVideoComments(params: {
+    viewerRole: UserRole;
+    viewerCollegeId?: number;
+    status?: CommentStatus;
+    collegeId?: number;
+    videoId?: number;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
+    if (params.viewerRole !== UserRole.COLLEGE_ADMIN && params.viewerRole !== UserRole.PLATFORM_ADMIN) {
+      throw new HttpError(403, 'Forbidden');
+    }
+
+    const page = Math.max(params.page || 1, 1);
+    const pageSize = Math.min(Math.max(params.pageSize || 20, 1), 50);
+    const skip = (page - 1) * pageSize;
+
+    const videoFilter: Record<string, unknown> = {};
+    if (params.viewerRole === UserRole.COLLEGE_ADMIN) {
+      if (!params.viewerCollegeId) throw new HttpError(400, 'Admin must belong to a college');
+      videoFilter.collegeId = params.viewerCollegeId;
+    } else if (params.collegeId) {
+      videoFilter.collegeId = params.collegeId;
+    }
+    if (params.videoId) videoFilter.id = params.videoId;
+
+    const and: Record<string, unknown>[] = [{ status: params.status ?? CommentStatus.PENDING }];
+    if (Object.keys(videoFilter).length > 0) {
+      and.push({ video: videoFilter });
+    }
+
+    const search = params.search?.trim();
+    if (search) {
+      and.push({
+        OR: [
+          { content: { contains: search } },
+          { video: { title: { contains: search } } },
+        ],
+      });
+    }
+
+    const where = and.length === 1 ? and[0] : { AND: and };
+
+    const [total, items] = await Promise.all([
+      prisma.videoComment.count({ where }),
+      prisma.videoComment.findMany({
+        where,
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        skip,
+        take: pageSize,
+        include: {
+          author: { select: { id: true, username: true, role: true, childProfile: true } },
+          video: {
+            select: {
+              id: true,
+              title: true,
+              collegeId: true,
+              college: { select: { id: true, name: true } },
+            },
+          },
+        },
+      }),
+    ]);
+
+    return { items, total, page, pageSize };
+  }
+
   static async auditVideoComment(params: {
     adminUserId: number;
     adminRole: UserRole;
@@ -732,20 +805,135 @@ export class ContentService {
     }
 
     const newStatus = pass ? CommentStatus.APPROVED : CommentStatus.REJECTED;
-    const updated = await prisma.videoComment.update({
-      where: { id: commentId },
+
+    // Strong-consistency "抢先制": only first update on PENDING wins
+    const updateWhere: Record<string, unknown> = {
+      id: commentId,
+      status: CommentStatus.PENDING,
+    };
+    if (adminRole === UserRole.COLLEGE_ADMIN) {
+      updateWhere.video = { collegeId: adminCollegeId };
+    }
+
+    const result = await prisma.videoComment.updateMany({
+      where: updateWhere,
       data: {
         status: newStatus,
         rejectReason: pass ? null : (reason || null),
         reviewedBy: adminUserId,
         reviewedAt: new Date(),
       },
-      include: { author: { select: { id: true, username: true, role: true, childProfile: true } } },
     });
+
+    if (result.count !== 1) {
+      if (comment.status !== CommentStatus.PENDING) {
+        throw new HttpError(409, `Conflict: comment already audited (current status: ${comment.status})`);
+      }
+      throw new HttpError(409, 'Conflict: audit not applied');
+    }
 
     const action = pass ? AuditAction.REVIEW_PASS : AuditAction.REVIEW_REJECT;
     await AuditService.log(adminUserId, action, String(commentId), 'VideoComment', reason);
-    return updated;
+
+    return prisma.videoComment.findUnique({
+      where: { id: commentId },
+      include: { author: { select: { id: true, username: true, role: true, childProfile: true } } },
+    });
+  }
+
+  /**
+   * Batch audit comments (College/Platform Admin)
+   * - Strong-consistency: first update on PENDING wins per comment
+   */
+  static async auditVideoCommentsBatch(params: {
+    adminUserId: number;
+    adminRole: UserRole;
+    adminCollegeId?: number;
+    ids: number[];
+    pass: boolean;
+    reason?: string;
+  }) {
+    const { adminUserId, adminRole, adminCollegeId, ids, pass, reason } = params;
+
+    if (adminRole !== UserRole.COLLEGE_ADMIN && adminRole !== UserRole.PLATFORM_ADMIN) {
+      throw new HttpError(403, 'Forbidden');
+    }
+    if (adminRole === UserRole.COLLEGE_ADMIN && !adminCollegeId) {
+      throw new HttpError(400, 'Admin must belong to a college');
+    }
+
+    const uniqueIds = Array.from(new Set((ids ?? []).map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0)));
+    if (uniqueIds.length === 0) throw new HttpError(400, 'ids is required');
+    if (!pass && (!reason || !reason.trim())) {
+      throw new HttpError(400, 'Reject reason is required');
+    }
+
+    const newStatus = pass ? CommentStatus.APPROVED : CommentStatus.REJECTED;
+    const results: Array<
+      | { id: number; ok: true; status: CommentStatus }
+      | { id: number; ok: false; status?: CommentStatus; message: string }
+    > = [];
+
+    for (const commentId of uniqueIds) {
+      const updateWhere: Record<string, unknown> = {
+        id: commentId,
+        status: CommentStatus.PENDING,
+      };
+      if (adminRole === UserRole.COLLEGE_ADMIN) {
+        updateWhere.video = { collegeId: adminCollegeId };
+      }
+
+      const update = await prisma.videoComment.updateMany({
+        where: updateWhere,
+        data: {
+          status: newStatus,
+          rejectReason: pass ? null : (reason || null),
+          reviewedBy: adminUserId,
+          reviewedAt: new Date(),
+        },
+      });
+
+      if (update.count === 1) {
+        const action = pass ? AuditAction.REVIEW_PASS : AuditAction.REVIEW_REJECT;
+        await AuditService.log(adminUserId, action, String(commentId), 'VideoComment', reason);
+        results.push({ id: commentId, ok: true, status: newStatus });
+        continue;
+      }
+
+      const current = await prisma.videoComment.findUnique({
+        where: { id: commentId },
+        include: { video: { select: { collegeId: true } } },
+      });
+
+      if (!current) {
+        results.push({ id: commentId, ok: false, message: 'Comment not found' });
+        continue;
+      }
+      if (adminRole === UserRole.COLLEGE_ADMIN && current.video.collegeId !== adminCollegeId) {
+        results.push({ id: commentId, ok: false, status: current.status, message: 'Forbidden: cross-college access' });
+        continue;
+      }
+      if (current.status !== CommentStatus.PENDING) {
+        results.push({
+          id: commentId,
+          ok: false,
+          status: current.status,
+          message: `Conflict: comment already audited (current status: ${current.status})`,
+        });
+        continue;
+      }
+      results.push({ id: commentId, ok: false, status: current.status, message: 'Conflict: audit not applied' });
+    }
+
+    return {
+      pass,
+      results,
+      summary: {
+        total: uniqueIds.length,
+        succeeded: results.filter((r) => r.ok).length,
+        failed: results.filter((r) => !r.ok).length,
+      },
+    };
   }
 
   static async upsertWatchLog(params: {

@@ -2,9 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { ContentController } from '../controllers/content.controller';
 import { authMiddleware, requireRole } from '../middlewares/auth.middleware';
-import { UserRole } from '../types/enums';
+import { UserRole, VideoStatus, CommentStatus } from '../types/enums';
 import { validateBody, validateParams, validateQuery } from '../middlewares/validate.middleware';
-import { VideoStatus } from '../types/enums';
 import { apiResponse, BaseResponseSchema, ErrorResponseSchema, registerPath } from '../docs/openapi';
 import { LiveMessageSchema, VideoCommentSchema, VideoSchema, VideoWatchLogSchema } from '../docs/schemas';
 import { requireAnyPermissions, requirePermissions } from '../middlewares/permission.middleware';
@@ -112,6 +111,37 @@ const auditCommentBodySchema = z.object({
 	pass: z.coerce.boolean(),
 	reason: z.string().optional(),
 });
+
+const listAdminCommentsQuerySchema = z.object({
+	status: z.nativeEnum(CommentStatus).optional().describe('默认 PENDING（待审核队列）'),
+	collegeId: z.coerce.number().int().positive().optional().describe('平台管理员可按学院筛选'),
+	videoId: z.coerce.number().int().positive().optional(),
+	search: z.string().optional().describe('搜索评论内容或视频标题'),
+	page: z.coerce.number().int().min(1).default(1),
+	pageSize: z.coerce.number().int().min(1).max(50).default(20),
+});
+
+const adminVideoCommentVideoSchema = z
+	.object({
+		id: z.number().int(),
+		title: z.string(),
+		collegeId: z.number().int(),
+		college: z.object({ id: z.number().int(), name: z.string() }).optional(),
+	})
+	.openapi('AdminVideoCommentVideo');
+
+const adminVideoCommentItemSchema = VideoCommentSchema.extend({
+	video: adminVideoCommentVideoSchema,
+}).openapi('AdminVideoCommentItem');
+
+const adminVideoCommentPagedResultSchema = z
+	.object({
+		items: z.array(adminVideoCommentItemSchema),
+		total: z.number().int().nonnegative(),
+		page: z.number().int().positive(),
+		pageSize: z.number().int().positive(),
+	})
+	.openapi('AdminVideoCommentPagedResult');
 
 const commentIdParamSchema = z.object({
 	commentId: z.string().regex(/^\d+$/, 'commentId must be a positive integer'),
@@ -295,6 +325,36 @@ registerPath({
 		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
 		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
 		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'get',
+	path: '/api/videos/comments/admin',
+	summary: '管理端评论审核列表（学院/平台管理员）',
+	tags: ['Videos'],
+	security: [{ bearerAuth: [] }],
+	description: '跨视频聚合的评论审核队列。学院管理员默认仅本学院视频下的评论；平台管理员可全局查看并按 collegeId 筛选。默认 status=PENDING。',
+	request: { query: listAdminCommentsQuerySchema },
+	responses: {
+		200: { description: 'Success', content: { 'application/json': { schema: apiResponse(adminVideoCommentPagedResultSchema) } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'post',
+	path: '/api/videos/comments/audit/batch',
+	summary: '批量审核评论（学院/平台管理员）',
+	tags: ['Videos'],
+	security: [{ bearerAuth: [] }],
+	request: { body: { content: { 'application/json': { schema: auditBatchBodySchema } } } },
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(z.any()) } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
 	},
 });
 
@@ -616,6 +676,22 @@ router.post(
 	requirePermissions([Permission.VIDEO_REVIEW]),
 	validateBody(auditBatchBodySchema),
 	ContentController.auditVideosBatch
+);
+
+router.get(
+	'/comments/admin',
+	requireRole([UserRole.COLLEGE_ADMIN, UserRole.PLATFORM_ADMIN]),
+	requirePermissions([Permission.COMMENT_REVIEW]),
+	validateQuery(listAdminCommentsQuerySchema),
+	ContentController.listAdminVideoComments
+);
+
+router.post(
+	'/comments/audit/batch',
+	requireRole([UserRole.COLLEGE_ADMIN, UserRole.PLATFORM_ADMIN]),
+	requirePermissions([Permission.COMMENT_REVIEW]),
+	validateBody(auditBatchBodySchema),
+	ContentController.auditVideoCommentsBatch
 );
 
 // Volunteer operations
