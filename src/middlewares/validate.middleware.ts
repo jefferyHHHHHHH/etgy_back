@@ -57,7 +57,15 @@ export const validateQuery = <T>(schema: ZodType<T>) => {
 export const validateParams = <T>(schema: ZodType<T>) => {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
-      req.params = schema.parse(req.params) as any;
+      const parsed = schema.parse(req.params) as any;
+
+      // Express v5 may expose `req.params` as getter-only; mirror validateQuery fix.
+      Object.defineProperty(req, 'params', {
+        value: parsed,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
       return next();
     } catch (err) {
       if (err instanceof ZodError) {

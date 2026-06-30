@@ -47,7 +47,7 @@ export class LiveController {
       if (error instanceof HttpError) {
         return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
       }
-      return res.status(400).json({ code: 400, message: error.message });
+      return res.status(500).json({ code: 500, message: error?.message || 'Failed to load live' });
     }
   }
 

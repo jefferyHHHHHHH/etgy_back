@@ -92,6 +92,7 @@ registerPath({
   path: '/api/live/{id}',
   summary: '直播详情（公开）',
   tags: ['Live'],
+  security: [{ bearerAuth: [] }],
   request: { params: idParamSchema },
   responses: {
     200: { description: 'OK', content: { 'application/json': { schema: apiResponse(LiveRoomSchema) } } },
