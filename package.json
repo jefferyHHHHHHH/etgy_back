@@ -17,6 +17,7 @@
     "smoke:device-binding": "node -e \"require('ts-node').register({ files: true }); require('./scripts/device-binding-smoke.ts');\"",
     "smoke:live": "node -e \"require('ts-node').register({ files: true }); require('./scripts/live-agora-smoke.ts');\"",
     "smoke:stats": "node -e \"require('ts-node').register({ files: true }); require('./scripts/stats-smoke.ts');\"",
+    "verify:stats": "node -e \"require('ts-node').register({ files: true }); require('./scripts/stats-verify.ts');\"",
     "start": "node dist/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

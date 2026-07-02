@@ -508,6 +508,8 @@ export class StatsService {
       where: {
         collegeId: { in: collegeIds },
         status: LiveStatus.FINISHED,
+        actualStart: { not: null },
+        actualEnd: { not: null },
         ...(range ? { actualEnd: { gte: range.start, lt: range.end } } : {}),
       },
       _count: { _all: true },
@@ -612,6 +614,8 @@ export class StatsService {
         SELECT v.collegeId AS collegeId, COUNT(*) AS cnt
         FROM VideoWatchLog w
         INNER JOIN Video v ON v.id = w.videoId
+        INNER JOIN User u ON u.id = w.userId
+        INNER JOIN ChildProfile cp ON cp.userId = u.id
         WHERE w.completed = 1
           AND v.collegeId IN (${Prisma.join(collegeIds)})
           ${rangeFilter}
