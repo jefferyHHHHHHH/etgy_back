@@ -3,6 +3,7 @@ import { AuditAction, CommentStatus, UserRole, VideoStatus } from '../types/enum
 import { AuditService } from './audit.service';
 import { HttpError } from '../utils/httpError';
 import { ModerationService } from './moderation.service';
+import { hasPermissions, Permission } from '../types/permissions';
 
 export class ContentService {
   
@@ -965,6 +966,55 @@ export class ContentService {
         failed: results.filter((r) => !r.ok).length,
       },
     };
+  }
+
+  /**
+   * Delete a video comment.
+   * - Admin (college/platform): college admin limited to own college videos
+   * - Volunteer: may delete comments on videos they uploaded
+   * - Child / other users: may only delete their own comments
+   */
+  static async deleteVideoComment(params: {
+    userId: number;
+    userRole: UserRole;
+    adminCollegeId?: number;
+    commentId: number;
+  }) {
+    const { userId, userRole, adminCollegeId, commentId } = params;
+
+    const comment = await prisma.videoComment.findUnique({
+      where: { id: commentId },
+      include: { video: { select: { id: true, collegeId: true, uploaderId: true } } },
+    });
+    if (!comment) throw new HttpError(404, 'Comment not found');
+
+    const isAdmin = userRole === UserRole.COLLEGE_ADMIN || userRole === UserRole.PLATFORM_ADMIN;
+
+    if (isAdmin) {
+      if (!hasPermissions(userRole, [Permission.COMMENT_REVIEW])) {
+        throw new HttpError(403, 'Forbidden');
+      }
+      if (userRole === UserRole.COLLEGE_ADMIN) {
+        if (!adminCollegeId) throw new HttpError(400, 'Admin must belong to a college');
+        if (comment.video.collegeId !== adminCollegeId) {
+          throw new HttpError(403, 'Forbidden: cross-college access');
+        }
+      }
+    } else if (userRole === UserRole.VOLUNTEER && comment.video.uploaderId === userId) {
+      // Volunteer may moderate comments on their own videos
+    } else if (comment.authorId !== userId) {
+      throw new HttpError(403, 'Forbidden: not owner');
+    }
+
+    await prisma.videoComment.delete({ where: { id: commentId } });
+    await AuditService.log(
+      userId,
+      AuditAction.DELETE,
+      String(commentId),
+      'VideoComment',
+      `Deleted comment #${commentId} on video #${comment.video.id}`
+    );
+    return { id: commentId, deleted: true };
   }
 
   static async upsertWatchLog(params: {

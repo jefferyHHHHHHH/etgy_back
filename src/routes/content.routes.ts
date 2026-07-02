@@ -153,6 +153,13 @@ const commentIdParamSchema = z.object({
 	commentId: z.string().regex(/^\d+$/, 'commentId must be a positive integer'),
 });
 
+const deleteResultSchema = z
+	.object({
+		id: z.number().int(),
+		deleted: z.boolean(),
+	})
+	.openapi('DeleteResult');
+
 const watchBodySchema = z.object({
 	lastPositionSec: z.coerce.number().int().min(0).default(0),
 	watchedSeconds: z.coerce.number().int().min(0).default(0).describe('本次增量观看秒数（delta）'),
@@ -389,6 +396,24 @@ registerPath({
 	},
 	responses: {
 		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(VideoCommentSchema) } } },
+		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
+		404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+	},
+});
+
+registerPath({
+	method: 'delete',
+	path: '/api/videos/comments/{commentId}',
+	summary: '删除评论（管理员、视频上传者或评论作者）',
+	tags: ['Videos'],
+	security: [{ bearerAuth: [] }],
+	description:
+		'学院/平台管理员可删除管辖范围内任意评论；志愿者可删除自己上传视频下的任意评论；儿童等登录用户仅可删除自己发表的评论。',
+	request: { params: commentIdParamSchema },
+	responses: {
+		200: { description: 'OK', content: { 'application/json': { schema: apiResponse(deleteResultSchema) } } },
 		400: { description: 'Bad Request', content: { 'application/json': { schema: ErrorResponseSchema } } },
 		401: { description: 'Unauthorized', content: { 'application/json': { schema: ErrorResponseSchema } } },
 		403: { description: 'Forbidden', content: { 'application/json': { schema: ErrorResponseSchema } } },
@@ -784,6 +809,11 @@ router.post(
 	validateParams(commentIdParamSchema),
 	validateBody(auditCommentBodySchema),
 	ContentController.auditVideoComment
+);
+router.delete(
+	'/comments/:commentId',
+	validateParams(commentIdParamSchema),
+	ContentController.deleteVideoComment
 );
 
 // Study/watch record

@@ -664,6 +664,37 @@ export class ContentController {
     }
   }
 
+  /**
+   * DELETE /api/videos/comments/:commentId
+   * Admin may delete any comment in scope; volunteer may delete comments on own videos; child/user may delete own comment only.
+   */
+  static async deleteVideoComment(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const { commentId } = req.params;
+
+      let adminCollegeId: number | undefined;
+      if (user.role === UserRole.COLLEGE_ADMIN || user.role === UserRole.PLATFORM_ADMIN) {
+        const profile = await UserService.getUserProfile(user.userId);
+        adminCollegeId = profile?.adminProfile?.collegeId ?? undefined;
+      }
+
+      const result = await ContentService.deleteVideoComment({
+        userId: user.userId,
+        userRole: user.role as UserRole,
+        adminCollegeId,
+        commentId: Number(commentId),
+      });
+
+      return res.json({ code: 200, message: 'Deleted', data: result });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
   static async reportWatchLog(req: Request, res: Response) {
     try {
       const user = req.user!;
