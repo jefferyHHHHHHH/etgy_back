@@ -16,6 +16,7 @@
     "smoke:ai-tutor": "node -e \"require('ts-node').register({ files: true }); require('./scripts/ai-tutor-smoke.ts');\"",
     "smoke:device-binding": "node -e \"require('ts-node').register({ files: true }); require('./scripts/device-binding-smoke.ts');\"",
     "smoke:live": "node -e \"require('ts-node').register({ files: true }); require('./scripts/live-agora-smoke.ts');\"",
+    "smoke:stats": "node -e \"require('ts-node').register({ files: true }); require('./scripts/stats-smoke.ts');\"",
     "start": "node dist/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

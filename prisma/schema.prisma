@@ -120,6 +120,7 @@ model ChildProfile {
   college   College? @relation(fields: [collegeId], references: [id])
 
   @@index([collegeId])
+  @@index([school])
 }
 
 enum VolunteerStatus {
@@ -215,6 +216,9 @@ model Video {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
+  @@index([uploaderId, status])
+  @@index([collegeId, status])
+
   // 1:1 Relation for frequently updated stats to reduce lock contention on main table
   metrics      VideoMetrics?
 
@@ -293,6 +297,7 @@ model VideoWatchLog {
   user            User  @relation("UserVideoWatchLogs", fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([videoId, userId])
+  @@index([videoId, completed])
 }
 
 // -----------------------------------------------------------------------------
@@ -349,6 +354,9 @@ model LiveRoom {
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@index([anchorId, status])
+  @@index([collegeId, status])
 }
 
 enum LiveMessageType {

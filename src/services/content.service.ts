@@ -4,6 +4,7 @@ import { AuditService } from './audit.service';
 import { HttpError } from '../utils/httpError';
 import { ModerationService } from './moderation.service';
 import { hasPermissions, Permission } from '../types/permissions';
+import { StatsCacheService } from './statsCache.service';
 
 export class ContentService {
   
@@ -315,10 +316,14 @@ export class ContentService {
     const action = pass ? AuditAction.REVIEW_PASS : AuditAction.REVIEW_REJECT;
     await AuditService.log(adminUserId, action, String(videoId), 'Video', reason);
 
-    return await prisma.video.findUnique({
+    const video = await prisma.video.findUnique({
       where: { id: videoId },
       include: { uploader: { select: { realName: true } }, metrics: true },
     });
+    if (video) {
+      void StatsCacheService.invalidateOnVideoChange(video.collegeId, video.uploaderId);
+    }
+    return video;
   }
 
   /**
@@ -439,10 +444,14 @@ export class ContentService {
     }
 
     await AuditService.log(volunteerUserId, AuditAction.PUBLISH, String(videoId), 'Video', 'Published');
-    return await prisma.video.findUnique({
+    const video = await prisma.video.findUnique({
       where: { id: videoId },
       include: { uploader: { select: { realName: true } }, metrics: true },
     });
+    if (video) {
+      void StatsCacheService.invalidateOnVideoChange(video.collegeId, video.uploaderId);
+    }
+    return video;
   }
 
   /**
@@ -501,10 +510,14 @@ export class ContentService {
     }
 
     await AuditService.log(operatorUserId, AuditAction.OFFLINE, String(videoId), 'Video', reason);
-    return await prisma.video.findUnique({
+    const video = await prisma.video.findUnique({
       where: { id: videoId },
       include: { uploader: { select: { realName: true } }, metrics: true },
     });
+    if (video) {
+      void StatsCacheService.invalidateOnVideoChange(video.collegeId, video.uploaderId);
+    }
+    return video;
   }
 
   /**
@@ -1037,7 +1050,7 @@ export class ContentService {
     const lastPositionSec = Math.max(0, Math.floor(params.lastPositionSec || 0));
     const delta = Math.max(0, Math.floor(params.watchedSecondsDelta || 0));
 
-    return prisma.$transaction(async (tx) => {
+    const log = await prisma.$transaction(async (tx) => {
       const existing = await tx.videoWatchLog.findUnique({ where: { videoId_userId: { videoId: params.videoId, userId: params.userId } } });
 
       if (!existing) {
@@ -1057,20 +1070,35 @@ export class ContentService {
           create: { videoId: params.videoId, playCount: 1, likeCount: 0, favCount: 0 },
         });
 
-        return created;
+        return { log: created, newlyCompleted: created.completed };
       }
+
+      const nextCompleted =
+        typeof params.completed === 'boolean' ? params.completed || existing.completed : existing.completed;
 
       const updated = await tx.videoWatchLog.update({
         where: { videoId_userId: { videoId: params.videoId, userId: params.userId } },
         data: {
           lastPositionSec,
           watchedSeconds: { increment: delta },
-          ...(typeof params.completed === 'boolean' ? { completed: params.completed || existing.completed } : {}),
+          ...(typeof params.completed === 'boolean' ? { completed: nextCompleted } : {}),
         },
       });
 
-      return updated;
+      return { log: updated, newlyCompleted: nextCompleted && !existing.completed };
     });
+
+    if (log.newlyCompleted) {
+      const video = await prisma.video.findUnique({
+        where: { id: params.videoId },
+        select: { collegeId: true, uploaderId: true },
+      });
+      if (video) {
+        void StatsCacheService.invalidateOnCompletion(video.collegeId, video.uploaderId);
+      }
+    }
+
+    return log.log;
   }
 
   static async listMyWatchLogs(params: {

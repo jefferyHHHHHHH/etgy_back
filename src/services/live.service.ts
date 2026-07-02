@@ -3,6 +3,7 @@ import { AuditAction, LiveMessageType, LiveStatus, UserRole } from '../types/enu
 import { AuditService } from './audit.service';
 import { HttpError } from '../utils/httpError';
 import { ModerationService } from './moderation.service';
+import { StatsCacheService } from './statsCache.service';
 import { env } from '../config/env';
 import { RtcTokenBuilder, RtcRole } from 'agora-token';
 
@@ -399,7 +400,11 @@ export class LiveService {
     const action = pass ? AuditAction.REVIEW_PASS : AuditAction.REVIEW_REJECT;
     await AuditService.log(adminUserId, action, String(liveId), 'LiveRoom', reason);
 
-    return await prisma.liveRoom.findUnique({ where: { id: liveId } });
+    const live = await prisma.liveRoom.findUnique({ where: { id: liveId } });
+    if (live) {
+      void StatsCacheService.invalidateOnLiveChange(live.collegeId, live.anchorId);
+    }
+    return live;
   }
 
   /**
@@ -430,7 +435,11 @@ export class LiveService {
     }
 
     await AuditService.log(anchorUserId, AuditAction.PUBLISH, String(liveId), 'LiveRoom', 'Published');
-    return prisma.liveRoom.findUnique({ where: { id: liveId } });
+    const live = await prisma.liveRoom.findUnique({ where: { id: liveId } });
+    if (live) {
+      void StatsCacheService.invalidateOnLiveChange(live.collegeId, live.anchorId);
+    }
+    return live;
   }
 
   /**
@@ -547,7 +556,11 @@ export class LiveService {
     }
 
     await AuditService.log(anchorUserId, AuditAction.UPDATE, String(liveId), 'LiveRoom', 'Finish live');
-    return prisma.liveRoom.findUnique({ where: { id: liveId } });
+    const live = await prisma.liveRoom.findUnique({ where: { id: liveId } });
+    if (live) {
+      void StatsCacheService.invalidateOnLiveChange(live.collegeId, live.anchorId);
+    }
+    return live;
   }
 
   static async listMessages(params: {

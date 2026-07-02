@@ -46,13 +46,14 @@ export const getOpenApiDocument = (options?: { serverUrl?: string }) => {
 		{ name: 'Live', description: 'Live room (create/submit/audit)' },
 		{ name: 'AI', description: 'AI tutor, streaming chat & risk alerts' },
 		{ name: 'Meta', description: 'Dictionaries & misc metadata' },
+		{ name: 'Stats', description: 'Volunteer/college rankings & statistics' },
 	];
 
 	// Note: `x-tagGroups` is a common vendor extension supported by some tooling.
 	// Swagger UI will safely ignore unknown extensions.
 	const xTagGroups = [
 		{ name: 'Core', tags: ['Auth', 'Users', 'Platform', 'OSS'] },
-		{ name: 'Content', tags: ['Videos', 'Live', 'AI'] },
+		{ name: 'Content', tags: ['Videos', 'Live', 'AI', 'Stats'] },
 		{ name: 'Meta', tags: ['Meta'] },
 	];
 

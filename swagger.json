@@ -42,6 +42,10 @@
     {
       "name": "Meta",
       "description": "Dictionaries & misc metadata"
+    },
+    {
+      "name": "Stats",
+      "description": "Volunteer/college rankings & statistics"
     }
   ],
   "x-tagGroups": [
@@ -59,7 +63,8 @@
       "tags": [
         "Videos",
         "Live",
-        "AI"
+        "AI",
+        "Stats"
       ]
     },
     {
@@ -10875,6 +10880,712 @@
           },
           "403": {
             "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stats/volunteers/ranking": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "志愿者排行榜",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "college",
+                "school",
+                "platform"
+              ],
+              "default": "college"
+            },
+            "required": false,
+            "name": "scope",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "exclusiveMinimum": true
+            },
+            "required": false,
+            "name": "collegeId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "school",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "score",
+                "teachingMinutes",
+                "liveFinishedCount",
+                "auditPassRate",
+                "childCompletionCount"
+              ],
+              "default": "score"
+            },
+            "required": false,
+            "name": "metric",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "month",
+                "week"
+              ],
+              "default": "all"
+            },
+            "required": false,
+            "name": "period",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "periodKey",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/BaseResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "scope": {
+                              "type": "string",
+                              "enum": [
+                                "college",
+                                "school",
+                                "platform"
+                              ]
+                            },
+                            "collegeId": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "exclusiveMinimum": true
+                            },
+                            "school": {
+                              "type": "string"
+                            },
+                            "metric": {
+                              "type": "string",
+                              "enum": [
+                                "score",
+                                "teachingMinutes",
+                                "liveFinishedCount",
+                                "auditPassRate",
+                                "childCompletionCount"
+                              ]
+                            },
+                            "period": {
+                              "type": "string",
+                              "enum": [
+                                "all",
+                                "month",
+                                "week"
+                              ]
+                            },
+                            "periodKey": {
+                              "type": "string"
+                            },
+                            "total": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "rank": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "exclusiveMinimum": true
+                                  },
+                                  "volunteerUserId": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "exclusiveMinimum": true
+                                  },
+                                  "realName": {
+                                    "type": "string"
+                                  },
+                                  "studentId": {
+                                    "type": "string"
+                                  },
+                                  "collegeId": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "exclusiveMinimum": true
+                                  },
+                                  "collegeName": {
+                                    "type": "string"
+                                  },
+                                  "teachingMinutes": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "liveFinishedCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "auditPassRate": {
+                                    "type": "number",
+                                    "nullable": true
+                                  },
+                                  "childCompletionCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "score": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "rank",
+                                  "volunteerUserId",
+                                  "realName",
+                                  "studentId",
+                                  "collegeId",
+                                  "collegeName",
+                                  "teachingMinutes",
+                                  "liveFinishedCount",
+                                  "auditPassRate",
+                                  "childCompletionCount",
+                                  "score"
+                                ]
+                              }
+                            },
+                            "myRank": {
+                              "type": "object",
+                              "properties": {
+                                "rank": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "exclusiveMinimum": true
+                                },
+                                "score": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "rank",
+                                "score"
+                              ]
+                            },
+                            "cachedAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "scope",
+                            "metric",
+                            "period",
+                            "total",
+                            "items"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stats/colleges/ranking": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "学院排行榜（平台管理员）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "score",
+                "teachingMinutes",
+                "liveFinishedCount",
+                "auditPassRate",
+                "childCompletionCount"
+              ],
+              "default": "score"
+            },
+            "required": false,
+            "name": "metric",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "month",
+                "week"
+              ],
+              "default": "all"
+            },
+            "required": false,
+            "name": "period",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "periodKey",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/BaseResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "metric": {
+                              "type": "string",
+                              "enum": [
+                                "score",
+                                "teachingMinutes",
+                                "liveFinishedCount",
+                                "auditPassRate",
+                                "childCompletionCount"
+                              ]
+                            },
+                            "period": {
+                              "type": "string",
+                              "enum": [
+                                "all",
+                                "month",
+                                "week"
+                              ]
+                            },
+                            "periodKey": {
+                              "type": "string"
+                            },
+                            "total": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "rank": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "exclusiveMinimum": true
+                                  },
+                                  "collegeId": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "exclusiveMinimum": true
+                                  },
+                                  "collegeName": {
+                                    "type": "string"
+                                  },
+                                  "volunteerActiveCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "publishedVideoCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "liveFinishedCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "totalTeachingMinutes": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "auditPassRate": {
+                                    "type": "number",
+                                    "nullable": true
+                                  },
+                                  "childCompletionCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "score": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "rank",
+                                  "collegeId",
+                                  "collegeName",
+                                  "volunteerActiveCount",
+                                  "publishedVideoCount",
+                                  "liveFinishedCount",
+                                  "totalTeachingMinutes",
+                                  "auditPassRate",
+                                  "childCompletionCount",
+                                  "score"
+                                ]
+                              }
+                            },
+                            "cachedAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "metric",
+                            "period",
+                            "total",
+                            "items"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stats/volunteers/me": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "志愿者个人统计",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "month",
+                "week"
+              ],
+              "default": "all"
+            },
+            "required": false,
+            "name": "period",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "periodKey",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/BaseResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "teachingMinutes": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "liveFinishedCount": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "auditPassRate": {
+                              "type": "number",
+                              "nullable": true
+                            },
+                            "childCompletionCount": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "ranks": {
+                              "type": "object",
+                              "properties": {
+                                "college": {
+                                  "type": "object",
+                                  "nullable": true,
+                                  "properties": {
+                                    "rank": {
+                                      "type": "integer",
+                                      "minimum": 0,
+                                      "exclusiveMinimum": true
+                                    },
+                                    "total": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "rank",
+                                    "total"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "college"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "teachingMinutes",
+                            "liveFinishedCount",
+                            "auditPassRate",
+                            "childCompletionCount",
+                            "ranks"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stats/schools": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "帮扶学校列表（学校榜下拉）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "exclusiveMinimum": true
+            },
+            "required": false,
+            "name": "collegeId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "search",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/BaseResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "school": {
+                                "type": "string"
+                              },
+                              "childCount": {
+                                "type": "integer",
+                                "minimum": 0
+                              }
+                            },
+                            "required": [
+                              "school",
+                              "childCount"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
             "content": {
               "application/json": {
                 "schema": {

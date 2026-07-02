@@ -96,6 +96,12 @@ const envSchema = z.object({
   AI_TUTOR_DAILY_LIMIT: z.coerce.number().int().min(1).default(5),
   AI_TUTOR_MAX_INPUT_LENGTH: z.coerce.number().int().min(20).max(2000).default(200),
   AI_TUTOR_CONTEXT_MESSAGES: z.coerce.number().int().min(0).max(50).default(8),
+
+  // Stats / rankings cache
+  STATS_CACHE_ENABLED: z.coerce.boolean().default(true),
+  STATS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  STATS_CACHE_TTL_SCHOOLS_SECONDS: z.coerce.number().int().positive().default(600),
+  STATS_CACHE_TTL_ME_SECONDS: z.coerce.number().int().positive().default(120),
 });
 
 export const env = envSchema.parse(process.env);

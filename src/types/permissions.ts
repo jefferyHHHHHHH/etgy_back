@@ -46,6 +46,10 @@ export enum Permission {
   LIVE_SUBMIT = 'live.submit',
   LIVE_REVIEW = 'live.review',
   LIVE_OFFLINE = 'live.offline',
+
+  // Stats / rankings
+  STATS_VIEW = 'stats.view',
+  STATS_COLLEGE_RANKING = 'stats.college.ranking',
 }
 
 export const rolePermissions: Record<UserRole, Set<Permission>> = {
@@ -60,6 +64,7 @@ export const rolePermissions: Record<UserRole, Set<Permission>> = {
     Permission.VIDEO_OFFLINE,
     Permission.LIVE_CREATE,
     Permission.LIVE_SUBMIT,
+    Permission.STATS_VIEW,
   ]),
 
   [UserRole.COLLEGE_ADMIN]: new Set<Permission>([
@@ -74,6 +79,7 @@ export const rolePermissions: Record<UserRole, Set<Permission>> = {
     Permission.COMMENT_REVIEW,
     Permission.LIVE_REVIEW,
     Permission.LIVE_OFFLINE,
+    Permission.STATS_VIEW,
   ]),
 
   [UserRole.PLATFORM_ADMIN]: new Set<Permission>([
@@ -93,6 +99,8 @@ export const rolePermissions: Record<UserRole, Set<Permission>> = {
     Permission.COMMENT_REVIEW,
     Permission.LIVE_OFFLINE,
     Permission.CONTENT_POLICY_MANAGE,
+    Permission.STATS_VIEW,
+    Permission.STATS_COLLEGE_RANKING,
   ]),
 };
 

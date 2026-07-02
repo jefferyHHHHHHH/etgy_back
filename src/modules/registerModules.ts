@@ -8,6 +8,7 @@ import metaModule from './meta/meta.module';
 import platformModule from './platform/platform.module';
 import ossModule from './oss/oss.module';
 import aiModule from './ai/ai.module';
+import statsModule from './stats/stats.module';
 import type { AppModule } from './types';
 
 const modules: AppModule[] = [
@@ -20,6 +21,7 @@ const modules: AppModule[] = [
 	platformModule,
 	ossModule,
 	aiModule,
+	statsModule,
 ];
 
 export const registerModules = (app: Express) => {

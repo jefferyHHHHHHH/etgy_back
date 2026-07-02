@@ -23,6 +23,7 @@ function requireAllRoutes() {
 	require(path.resolve(__dirname, '../src/routes/oss.routes'));
 	require(path.resolve(__dirname, '../src/routes/platform.routes'));
 	require(path.resolve(__dirname, '../src/routes/ai.routes'));
+	require(path.resolve(__dirname, '../src/routes/stats.routes'));
 }
 
 function main() {
@@ -40,6 +41,10 @@ function main() {
 	// Key paths we touched
 	assert(doc.paths['/api/videos/admin'], 'Missing path: /api/videos/admin');
 	assert(doc.paths['/api/videos/mine'], 'Missing path: /api/videos/mine');
+	assert(doc.paths['/api/stats/volunteers/ranking'], 'Missing path: /api/stats/volunteers/ranking');
+	assert(doc.paths['/api/stats/colleges/ranking'], 'Missing path: /api/stats/colleges/ranking');
+	assert(doc.paths['/api/stats/volunteers/me'], 'Missing path: /api/stats/volunteers/me');
+	assert(doc.paths['/api/stats/schools'], 'Missing path: /api/stats/schools');
 
 	// Key schemas we added
 	assert(doc.components.schemas.AdminVideoPagedResult, 'Missing schema: AdminVideoPagedResult');

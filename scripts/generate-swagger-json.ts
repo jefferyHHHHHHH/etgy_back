@@ -30,6 +30,7 @@ function requireAllRoutes() {
 	require(path.resolve(__dirname, '../src/routes/oss.routes'));
 	require(path.resolve(__dirname, '../src/routes/platform.routes'));
 	require(path.resolve(__dirname, '../src/routes/ai.routes'));
+	require(path.resolve(__dirname, '../src/routes/stats.routes'));
 }
 
 async function main() {
