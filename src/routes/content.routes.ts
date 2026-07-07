@@ -47,6 +47,21 @@ const listVideosQuerySchema = z.object({
 	pageSize: z.coerce.number().int().min(1).max(50).default(20),
 });
 
+const adminListVideosQuerySchema = z.object({
+	status: z
+		.union([z.nativeEnum(VideoStatus), z.literal('ALL')])
+		.optional()
+		.describe('管理端视频列表；传 ALL 表示不按状态筛选；学院管理员默认 REVIEW'),
+	collegeId: z.coerce.number().int().positive().optional(),
+	uploaderId: z.coerce.number().int().positive().optional(),
+	search: z.string().optional(),
+	grade: z.string().optional(),
+	subject: z.string().optional(),
+	sort: z.enum(['latest', 'hot']).default('latest'),
+	page: z.coerce.number().int().min(1).default(1),
+	pageSize: z.coerce.number().int().min(1).max(50).default(20),
+});
+
 // Admin list response: include presigned media urls for preview/play
 const videoMediaUrlsSchema = z
 	.object({
@@ -164,6 +179,7 @@ const watchBodySchema = z.object({
 	lastPositionSec: z.coerce.number().int().min(0).default(0),
 	watchedSeconds: z.coerce.number().int().min(0).default(0).describe('本次增量观看秒数（delta）'),
 	completed: z.coerce.boolean().optional(),
+	markPlay: z.coerce.boolean().optional().describe('标记一次播放（每次点击播放/开始观看时传 true，用于累计播放量）'),
 });
 
 const listWatchLogsQuerySchema = z.object({
@@ -661,7 +677,7 @@ router.get(
 	requireRole([UserRole.COLLEGE_ADMIN, UserRole.PLATFORM_ADMIN]),
 	// Platform admins can list to compare colleges / manage offlining; college admins list for reviews
 	requireAnyPermissions([Permission.VIDEO_REVIEW, Permission.VIDEO_OFFLINE]),
-	validateQuery(listVideosQuerySchema),
+	validateQuery(adminListVideosQuerySchema),
 	ContentController.listVideosAdmin
 );
 

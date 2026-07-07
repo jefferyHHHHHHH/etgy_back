@@ -1038,6 +1038,7 @@ export class ContentService {
     lastPositionSec: number;
     watchedSecondsDelta: number;
     completed?: boolean;
+    markPlay?: boolean;
   }) {
     // Ensure access (children only published; volunteers/admins follow existing getVideo rules)
     await this.getVideoById({
@@ -1049,9 +1050,20 @@ export class ContentService {
 
     const lastPositionSec = Math.max(0, Math.floor(params.lastPositionSec || 0));
     const delta = Math.max(0, Math.floor(params.watchedSecondsDelta || 0));
+    const shouldIncrementPlay = Boolean(params.markPlay);
+
+    const bumpPlayCount = async (tx: any) => {
+      const metrics = await tx.videoMetrics.upsert({
+        where: { videoId: params.videoId },
+        update: { playCount: { increment: 1 } },
+        create: { videoId: params.videoId, playCount: 1, likeCount: 0, favCount: 0 },
+      });
+      return metrics.playCount;
+    };
 
     const log = await prisma.$transaction(async (tx) => {
       const existing = await tx.videoWatchLog.findUnique({ where: { videoId_userId: { videoId: params.videoId, userId: params.userId } } });
+      let playCount: number | undefined;
 
       if (!existing) {
         const created = await tx.videoWatchLog.create({
@@ -1064,13 +1076,11 @@ export class ContentService {
           },
         });
 
-        await tx.videoMetrics.upsert({
-          where: { videoId: params.videoId },
-          update: { playCount: { increment: 1 } },
-          create: { videoId: params.videoId, playCount: 1, likeCount: 0, favCount: 0 },
-        });
+        if (shouldIncrementPlay) {
+          playCount = await bumpPlayCount(tx);
+        }
 
-        return { log: created, newlyCompleted: created.completed };
+        return { log: created, newlyCompleted: created.completed, playCount };
       }
 
       const nextCompleted =
@@ -1085,7 +1095,11 @@ export class ContentService {
         },
       });
 
-      return { log: updated, newlyCompleted: nextCompleted && !existing.completed };
+      if (shouldIncrementPlay) {
+        playCount = await bumpPlayCount(tx);
+      }
+
+      return { log: updated, newlyCompleted: nextCompleted && !existing.completed, playCount };
     });
 
     if (log.newlyCompleted) {
@@ -1098,7 +1112,12 @@ export class ContentService {
       }
     }
 
-    return log.log;
+    if (log.playCount == null) {
+      const metrics = await prisma.videoMetrics.findUnique({ where: { videoId: params.videoId } });
+      return { ...log.log, playCount: metrics?.playCount ?? 0 };
+    }
+
+    return { ...log.log, playCount: log.playCount };
   }
 
   static async listMyWatchLogs(params: {

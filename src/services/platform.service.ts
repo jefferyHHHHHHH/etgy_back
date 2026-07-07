@@ -337,6 +337,8 @@ export class PlatformService {
       ...(scopedCollegeId ? { video: { collegeId: scopedCollegeId } } : {}),
     };
 
+    const volunteerScopeWhere = scopedCollegeId ? { collegeId: scopedCollegeId } : {};
+
     const [
       videoTotal,
       liveTotal,
@@ -345,7 +347,10 @@ export class PlatformService {
       commentPendingReview,
       todayNewVideos,
       todayNewLives,
-      volunteerCount,
+      volunteerActiveCount,
+      volunteerTotal,
+      totalPlaysAgg,
+      childTotal,
     ] = await Promise.all([
       prisma.video.count({ where: videoWhere }),
       prisma.liveRoom.count({ where: liveWhere }),
@@ -356,10 +361,18 @@ export class PlatformService {
       prisma.liveRoom.count({ where: { ...liveWhere, createdAt: { gte: startOfToday } } }),
       prisma.volunteerProfile.count({
         where: {
-          ...(scopedCollegeId ? { collegeId: scopedCollegeId } : {}),
+          ...volunteerScopeWhere,
           user: { status: UserStatus.ACTIVE },
         },
       }),
+      prisma.volunteerProfile.count({ where: volunteerScopeWhere }),
+      prisma.videoMetrics.aggregate({
+        where: scopedCollegeId ? { video: { collegeId: scopedCollegeId } } : {},
+        _sum: { playCount: true },
+      }),
+      scopedCollegeId
+        ? Promise.resolve(0)
+        : prisma.user.count({ where: { role: UserRole.CHILD } }),
     ]);
 
     const toMap = <T extends { status: any; _count: { _all: number } }>(rows: T[]) => {
@@ -375,6 +388,12 @@ export class PlatformService {
     const videoPendingReview = videoStatusCounts[VideoStatus.REVIEW] ?? 0;
     const videoApproved = videoStatusCounts[VideoStatus.APPROVED] ?? 0;
     const videoPublished = videoStatusCounts[VideoStatus.PUBLISHED] ?? 0;
+    const videoRejected = videoStatusCounts[VideoStatus.REJECTED] ?? 0;
+    const videoOffline = videoStatusCounts[VideoStatus.OFFLINE] ?? 0;
+    // 审核通过率：已通过(含上架/下架) / 已审核(通过+驳回)
+    const videoAuditPassed = videoApproved + videoPublished + videoOffline;
+    const reviewedTotal = videoAuditPassed + videoRejected;
+    const approvalRate = reviewedTotal === 0 ? null : videoAuditPassed / reviewedTotal;
 
     const livePendingReview = liveStatusCounts[LiveStatus.REVIEW] ?? 0;
     const livePassed = liveStatusCounts[LiveStatus.PASSED] ?? 0;
@@ -388,7 +407,10 @@ export class PlatformService {
       totals: {
         videoTotal,
         liveTotal,
-        volunteerActiveCount: volunteerCount,
+        volunteerActiveCount: volunteerActiveCount,
+        volunteerTotal,
+        totalPlays: totalPlaysAgg._sum.playCount ?? 0,
+        ...(scopedCollegeId ? {} : { childTotal }),
       },
       today: {
         newVideos: todayNewVideos,
@@ -399,6 +421,7 @@ export class PlatformService {
         pendingReview: videoPendingReview,
         approved: videoApproved,
         published: videoPublished,
+        approvalRate,
       },
       live: {
         byStatus: liveStatusCounts,

@@ -155,8 +155,14 @@ export class ContentController {
       // Default status differs by admin role:
       // - College admin: focus on pending review by default
       // - Platform admin: global management, default to ALL statuses
+      // - status=ALL explicitly disables status filter (for dashboards / full lists)
+      const rawStatus = status as string | undefined;
       const effectiveStatus =
-        user.role === UserRole.PLATFORM_ADMIN ? (status as VideoStatus | undefined) : ((status as VideoStatus | undefined) ?? VideoStatus.REVIEW);
+        rawStatus === 'ALL'
+          ? undefined
+          : user.role === UserRole.PLATFORM_ADMIN
+            ? (rawStatus as VideoStatus | undefined)
+            : ((rawStatus as VideoStatus | undefined) ?? VideoStatus.REVIEW);
 
       const result = await ContentService.listVideos({
         status: effectiveStatus,
@@ -712,6 +718,7 @@ export class ContentController {
         lastPositionSec: Number(req.body.lastPositionSec ?? 0),
         watchedSecondsDelta: Number(req.body.watchedSeconds ?? 0),
         completed: typeof req.body.completed === 'boolean' ? Boolean(req.body.completed) : undefined,
+        markPlay: typeof req.body.markPlay === 'boolean' ? Boolean(req.body.markPlay) : undefined,
       });
 
       return res.json({ code: 200, message: 'Success', data: log });

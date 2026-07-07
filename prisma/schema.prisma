@@ -54,6 +54,7 @@ model User {
   videoComments     VideoComment[]    @relation("UserVideoComments")
   videoWatchLogs    VideoWatchLog[]   @relation("UserVideoWatchLogs")
   liveMessages      LiveMessage[]     @relation("UserLiveMessages")
+  livePresences     LivePresence[]    @relation("UserLivePresence")
 
   // WeChat bindings
   wechatAccounts    WechatAccount[]
@@ -319,6 +320,9 @@ model LiveRoom {
   id            Int      @id @default(autoincrement())
   title         String
   intro         String?
+  gradeRange    String?
+  subjectTag    String?
+  estimatedViewers Int?
   
   planStartTime DateTime
   planEndTime   DateTime
@@ -346,6 +350,8 @@ model LiveRoom {
   replayVideo   Video?   @relation("LiveReplayVideo", fields: [replayVideoId], references: [id])
 
   messages      LiveMessage[] @relation("LiveRoomMessages")
+  metrics       LiveMetrics?
+  presences     LivePresence[]
   
   anchorId      Int
   anchor        VolunteerProfile @relation(fields: [anchorId], references: [userId])
@@ -376,6 +382,27 @@ model LiveMessage {
   sender    User     @relation("UserLiveMessages", fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([liveId, id])
+}
+
+model LiveMetrics {
+  liveId         Int      @id
+  live           LiveRoom @relation(fields: [liveId], references: [id], onDelete: Cascade)
+  peakViewers    Int      @default(0)
+  averageViewers Int      @default(0)
+  sampleCount    Int      @default(0)
+  viewerSeconds  Int      @default(0)
+}
+
+model LivePresence {
+  liveId     Int
+  userId     Int
+  lastSeenAt DateTime @default(now()) @updatedAt
+
+  live LiveRoom @relation(fields: [liveId], references: [id], onDelete: Cascade)
+  user User     @relation("UserLivePresence", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([liveId, userId])
+  @@index([liveId, lastSeenAt])
 }
 
 // -----------------------------------------------------------------------------
