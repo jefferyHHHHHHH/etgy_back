@@ -45,11 +45,22 @@ export const VideoSchema = z
 	})
 	.openapi('Video');
 
+export const LiveMetricsSchema = z
+	.object({
+		peakViewers: z.number().int().nonnegative(),
+		averageViewers: z.number().int().nonnegative(),
+		onlineCount: z.number().int().nonnegative().optional(),
+	})
+	.openapi('LiveMetrics');
+
 export const LiveRoomSchema = z
 	.object({
 		id: z.number().int(),
 		title: z.string(),
 		intro: z.string().nullable().optional(),
+		gradeRange: z.string().nullable().optional(),
+		subjectTag: z.string().nullable().optional(),
+		estimatedViewers: z.number().int().nullable().optional(),
 
 		planStartTime: z.string().datetime(),
 		planEndTime: z.string().datetime(),
@@ -78,6 +89,7 @@ export const LiveRoomSchema = z
 		collegeId: z.number().int(),
 		anchor: z.any().optional(),
 		college: z.any().optional(),
+		metrics: LiveMetricsSchema.nullable().optional(),
 
 		createdAt: z.string().datetime().optional(),
 		updatedAt: z.string().datetime().optional(),

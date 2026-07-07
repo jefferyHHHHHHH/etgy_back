@@ -4,6 +4,7 @@ import { AuditService } from './audit.service';
 import { HttpError } from '../utils/httpError';
 import { ModerationService } from './moderation.service';
 import { StatsCacheService } from './statsCache.service';
+import { LivePresenceService } from './livePresence.service';
 import { env } from '../config/env';
 import { RtcTokenBuilder, RtcRole } from 'agora-token';
 
@@ -24,6 +25,36 @@ export class LiveService {
   private static getLiveChannelName(liveId: number) {
     // Stable, human-readable, avoids collisions across environments.
     return `etgy_live_${liveId}`;
+  }
+
+  private static endedStatuses: LiveStatus[] = [LiveStatus.FINISHED, LiveStatus.OFFLINE];
+
+  private static needsMetricsBackfill(status: LiveStatus, metrics?: { peakViewers?: number } | null) {
+    return this.endedStatuses.includes(status) && (!metrics || (metrics.peakViewers ?? 0) <= 0);
+  }
+
+  private static async enrichLiveMetrics<T extends { id: number; status: LiveStatus; metrics?: any | null }>(
+    items: T[]
+  ): Promise<T[]> {
+    const targets = items.filter((item) => this.needsMetricsBackfill(item.status, item.metrics));
+    if (targets.length === 0) return items;
+
+    await Promise.all(targets.map((item) => LivePresenceService.ensureMetrics(item.id)));
+    const metricsRows = await prisma.liveMetrics.findMany({
+      where: { liveId: { in: targets.map((item) => item.id) } },
+    });
+    const metricsMap = new Map(metricsRows.map((row) => [row.liveId, row]));
+    return items.map((item) => {
+      const metrics = metricsMap.get(item.id);
+      return metrics ? ({ ...item, metrics } as T) : item;
+    });
+  }
+
+  private static async enrichSingleLiveMetrics<T extends { id: number; status: LiveStatus; metrics?: any | null }>(
+    live: T
+  ): Promise<T> {
+    const [result] = await this.enrichLiveMetrics([live]);
+    return result;
   }
 
   static async buildAgoraRtcToken(params: {
@@ -158,11 +189,13 @@ export class LiveService {
           updatedAt: true,
           anchor: { select: { realName: true, userId: true, collegeId: true } },
           college: true,
+          metrics: true,
         },
       }),
     ]);
 
-    return { items, total, page, pageSize };
+    const enrichedItems = await this.enrichLiveMetrics(items);
+    return { items: enrichedItems, total, page, pageSize };
   }
 
   static async listMyLives(params: {
@@ -189,11 +222,13 @@ export class LiveService {
         take: pageSize,
         include: {
           college: true,
+          metrics: true,
         },
       }),
     ]);
 
-    return { items, total, page, pageSize };
+    const enrichedItems = await this.enrichLiveMetrics(items);
+    return { items: enrichedItems, total, page, pageSize };
   }
 
   static async listLivesAdmin(params: {
@@ -224,7 +259,9 @@ export class LiveService {
     }
 
     if (params.status) {
-      where.status = params.status;
+      if (String(params.status) !== 'ALL') {
+        where.status = params.status;
+      }
     } else {
       where.status = LiveStatus.REVIEW;
     }
@@ -247,11 +284,13 @@ export class LiveService {
         include: {
           anchor: { select: { realName: true, userId: true, collegeId: true } },
           college: true,
+          metrics: true,
         },
       }),
     ]);
 
-    return { items, total, page, pageSize };
+    const enrichedItems = await this.enrichLiveMetrics(items);
+    return { items: enrichedItems, total, page, pageSize };
   }
 
   static async getLiveById(params: {
@@ -267,39 +306,47 @@ export class LiveService {
       include: {
         anchor: { select: { realName: true, userId: true, collegeId: true } },
         college: true,
+        metrics: true,
       },
     });
 
     if (!live) throw new HttpError(404, 'Live not found');
+
+    let result: any = live;
 
     // Guest or child: only visible statuses
     // 游客/儿童：仅可见已上架/直播中/已结束
     if (!viewerRole || viewerRole === UserRole.CHILD) {
       const visible = [LiveStatus.PUBLISHED, LiveStatus.LIVING, LiveStatus.FINISHED] as const;
       if (!visible.includes(live.status as (typeof visible)[number])) throw new HttpError(404, 'Live not found');
-      return { ...live, pushUrl: null } as any;
-    }
-
-    if (viewerRole === UserRole.PLATFORM_ADMIN) return live;
-
-    if (viewerRole === UserRole.VOLUNTEER) {
+      result = { ...live, pushUrl: null };
+    } else if (viewerRole === UserRole.PLATFORM_ADMIN) {
+      result = live;
+    } else if (viewerRole === UserRole.VOLUNTEER) {
       if (live.status === LiveStatus.PUBLISHED || live.status === LiveStatus.LIVING || live.status === LiveStatus.FINISHED) {
-        // Non-owner volunteers should not see pushUrl.
-        return { ...live, pushUrl: null } as any;
+        result = { ...live, pushUrl: null };
+      } else if (!viewerUserId) {
+        throw new HttpError(401, 'Unauthorized');
+      } else if (live.anchorId !== viewerUserId) {
+        throw new HttpError(404, 'Live not found');
+      } else {
+        result = live;
       }
-      if (!viewerUserId) throw new HttpError(401, 'Unauthorized');
-      if (live.anchorId !== viewerUserId) throw new HttpError(404, 'Live not found');
-      return live;
+    } else if (viewerRole === UserRole.COLLEGE_ADMIN) {
+      if (live.status === LiveStatus.PUBLISHED || live.status === LiveStatus.LIVING || live.status === LiveStatus.FINISHED) {
+        result = live;
+      } else if (!viewerCollegeId) {
+        throw new HttpError(400, 'Admin must belong to a college');
+      } else if (live.collegeId !== viewerCollegeId) {
+        throw new HttpError(404, 'Live not found');
+      } else {
+        result = live;
+      }
+    } else {
+      throw new HttpError(403, 'Forbidden');
     }
 
-    if (viewerRole === UserRole.COLLEGE_ADMIN) {
-      if (live.status === LiveStatus.PUBLISHED || live.status === LiveStatus.LIVING || live.status === LiveStatus.FINISHED) return live;
-      if (!viewerCollegeId) throw new HttpError(400, 'Admin must belong to a college');
-      if (live.collegeId !== viewerCollegeId) throw new HttpError(404, 'Live not found');
-      return live;
-    }
-
-    throw new HttpError(403, 'Forbidden');
+    return this.enrichSingleLiveMetrics(result);
   }
 
   static async createLiveDraft(anchorUserId: number, collegeId: number | undefined, data: {
@@ -307,6 +354,9 @@ export class LiveService {
     intro?: string;
     planStartTime: Date;
     planEndTime: Date;
+    gradeRange?: string;
+    subjectTag?: string;
+    estimatedViewers?: number;
   }) {
     if (!collegeId) throw new HttpError(400, 'Anchor must belong to a college');
     if (data.planEndTime <= data.planStartTime) throw new HttpError(400, 'Invalid plan time range');
@@ -315,6 +365,9 @@ export class LiveService {
       data: {
         title: data.title,
         intro: data.intro,
+        gradeRange: data.gradeRange,
+        subjectTag: data.subjectTag,
+        estimatedViewers: data.estimatedViewers,
         planStartTime: data.planStartTime,
         planEndTime: data.planEndTime,
         status: LiveStatus.DRAFT,
@@ -524,7 +577,8 @@ export class LiveService {
     }
 
     await AuditService.log(anchorUserId, AuditAction.UPDATE, String(liveId), 'LiveRoom', 'Start live');
-    return prisma.liveRoom.findUnique({ where: { id: liveId } });
+    await LivePresenceService.resetForLiveStart(liveId);
+    return prisma.liveRoom.findUnique({ where: { id: liveId }, include: { metrics: true } });
   }
 
   static async finishLive(anchorUserId: number, liveId: number) {
@@ -558,9 +612,10 @@ export class LiveService {
     await AuditService.log(anchorUserId, AuditAction.UPDATE, String(liveId), 'LiveRoom', 'Finish live');
     const live = await prisma.liveRoom.findUnique({ where: { id: liveId } });
     if (live) {
+      await LivePresenceService.finalizeOnFinish(liveId, live.actualStart, live.actualEnd ?? new Date());
       void StatsCacheService.invalidateOnLiveChange(live.collegeId, live.anchorId);
     }
-    return live;
+    return prisma.liveRoom.findUnique({ where: { id: liveId }, include: { metrics: true } });
   }
 
   static async listMessages(params: {

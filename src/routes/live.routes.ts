@@ -5,7 +5,7 @@ import { validateBody, validateParams, validateQuery } from '../middlewares/vali
 import { LiveController } from '../controllers/live.controller';
 import { LiveMessageType, LiveStatus, UserRole } from '../types/enums';
 import { apiResponse, BaseResponseSchema, ErrorResponseSchema, registerPath } from '../docs/openapi';
-import { LiveMessageSchema, LiveRoomPagedResultSchema, LiveRoomSchema, LiveStreamInfoSchema } from '../docs/schemas';
+import { LiveMessageSchema, LiveMetricsSchema, LiveRoomPagedResultSchema, LiveRoomSchema, LiveStreamInfoSchema } from '../docs/schemas';
 
 const router = Router();
 
@@ -28,7 +28,10 @@ const listMineQuerySchema = z.object({
 });
 
 const listAdminQuerySchema = z.object({
-  status: z.nativeEnum(LiveStatus).optional().describe('默认 REVIEW'),
+  status: z
+    .union([z.nativeEnum(LiveStatus), z.literal('ALL')])
+    .optional()
+    .describe('默认 REVIEW；传 ALL 表示不按状态筛选'),
   collegeId: z.coerce.number().int().positive().optional(),
   anchorId: z.coerce.number().int().positive().optional(),
   search: z.string().optional(),
@@ -41,6 +44,9 @@ const createLiveBodySchema = z.object({
   intro: z.string().optional(),
   planStartTime: z.string().min(1),
   planEndTime: z.string().min(1),
+  gradeRange: z.string().optional().describe('适用年级，逗号分隔，如 "一年级,二年级"'),
+  subjectTag: z.string().optional().describe('学科标签'),
+  estimatedViewers: z.coerce.number().int().min(1).optional().describe('预估观看人数'),
 });
 
 const auditBodySchema = z.object({
@@ -64,6 +70,10 @@ const messageListQuerySchema = z.object({
 const messageSendBodySchema = z.object({
   type: z.nativeEnum(LiveMessageType).optional(),
   content: z.string().min(1).max(500),
+});
+
+const presenceBodySchema = z.object({
+  action: z.enum(['join', 'heartbeat', 'leave']).default('heartbeat'),
 });
 
 const agoraRtcTokenResponseSchema = z.object({
@@ -283,6 +293,35 @@ registerPath({
 
 registerPath({
   method: 'get',
+  path: '/api/live/{id}/stats',
+  summary: '直播观看统计（在线/峰值/平均）',
+  tags: ['Live'],
+  security: [{ bearerAuth: [] }],
+  request: { params: idParamSchema },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: apiResponse(LiveMetricsSchema) } } },
+    404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registerPath({
+  method: 'post',
+  path: '/api/live/{id}/presence',
+  summary: '上报直播在线状态（进入/心跳/离开）',
+  tags: ['Live'],
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: idParamSchema,
+    body: { content: { 'application/json': { schema: presenceBodySchema } } },
+  },
+  responses: {
+    200: { description: 'OK', content: { 'application/json': { schema: apiResponse(LiveMetricsSchema) } } },
+    404: { description: 'Not Found', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registerPath({
+  method: 'get',
   path: '/api/live/{id}/stream',
   summary: '获取直播推/拉流信息（登录用户）',
   tags: ['Live'],
@@ -344,6 +383,18 @@ router.get(
   LiveController.getLive
 );
 
+router.get(
+  '/:id/stats',
+  validateParams(idParamSchema),
+  (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    const hasBearer = typeof authHeader === 'string' && authHeader.startsWith('Bearer ');
+    if (hasBearer) return authMiddleware(req, res, next);
+    return next();
+  },
+  LiveController.getLiveStats
+);
+
 // Protected routes
 router.use(authMiddleware);
 
@@ -388,6 +439,13 @@ router.get(
   '/:id/stream',
   validateParams(idParamSchema),
   LiveController.getStreamInfo
+);
+
+router.post(
+  '/:id/presence',
+  validateParams(idParamSchema),
+  validateBody(presenceBodySchema),
+  LiveController.updatePresence
 );
 
 // Agora RTC token

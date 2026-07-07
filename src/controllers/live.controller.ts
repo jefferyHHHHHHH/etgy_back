@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { LiveService } from '../services/live.service';
+import { LivePresenceService } from '../services/livePresence.service';
 import { UserService } from '../services/user.service';
 import { HttpError } from '../utils/httpError';
 import { LiveMessageType, UserRole } from '../types/enums';
@@ -109,6 +110,9 @@ export class LiveController {
         intro: req.body.intro,
         planStartTime: new Date(req.body.planStartTime),
         planEndTime: new Date(req.body.planEndTime),
+        gradeRange: req.body.gradeRange,
+        subjectTag: req.body.subjectTag,
+        estimatedViewers: req.body.estimatedViewers != null ? Number(req.body.estimatedViewers) : undefined,
       });
 
       res.json({ code: 201, message: 'Live draft created', data: live });
@@ -322,6 +326,62 @@ export class LiveController {
       });
 
       return res.json({ code: 200, message: 'Success', data });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
+  static async updatePresence(req: Request, res: Response) {
+    try {
+      const user = req.user!;
+      const liveId = Number(req.params.id);
+      const action = String(req.body?.action || 'heartbeat');
+
+      const profile = await UserService.getUserProfile(user.userId);
+      const viewerCollegeId = profile?.adminProfile?.collegeId ?? profile?.volunteerProfile?.collegeId ?? undefined;
+
+      await LiveService.getLiveById({
+        liveId,
+        viewerRole: user.role as UserRole,
+        viewerUserId: user.userId,
+        viewerCollegeId,
+      });
+
+      const stats =
+        action === 'leave'
+          ? await LivePresenceService.leavePresence(liveId, user.userId)
+          : await LivePresenceService.touchPresence(liveId, user.userId);
+
+      return res.json({ code: 200, message: 'Success', data: stats });
+    } catch (error: any) {
+      if (error instanceof HttpError) {
+        return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
+      }
+      return res.status(400).json({ code: 400, message: error.message });
+    }
+  }
+
+  static async getLiveStats(req: Request, res: Response) {
+    try {
+      const liveId = Number(req.params.id);
+      const user = req.user;
+
+      if (user) {
+        const profile = await UserService.getUserProfile(user.userId);
+        const viewerCollegeId = profile?.adminProfile?.collegeId ?? profile?.volunteerProfile?.collegeId ?? undefined;
+        await LiveService.getLiveById({
+          liveId,
+          viewerRole: user.role as UserRole,
+          viewerUserId: user.userId,
+          viewerCollegeId,
+        });
+      }
+
+      const stats = await LivePresenceService.getStats(liveId);
+      return res.json({ code: 200, message: 'Success', data: stats });
     } catch (error: any) {
       if (error instanceof HttpError) {
         return res.status(error.statusCode).json({ code: error.statusCode, message: error.message });
