@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma';
+import { env } from '../config/env';
 import { Prisma } from '@prisma/client';
 import { generateDeviceBindToken, generateToken, generateWechatBindToken, verifyDeviceBindToken, verifyWechatBindToken } from '../utils/token';
 // import { UserRole } from '@prisma/client';
@@ -77,7 +78,7 @@ export class AuthService {
     const { deviceId, deviceInfo, skipDeviceBinding } = options ?? {};
 
     // Child device binding (app): two-step flow
-    if (user.role === UserRole.CHILD && !skipDeviceBinding) {
+    if (env.CHILD_DEVICE_BINDING_ENABLED && user.role === UserRole.CHILD && !skipDeviceBinding) {
       if (!deviceId) {
         // Keep backward compatibility for non-app callers (e.g. WeChat bind, admin tools)
         // by allowing login without device binding when deviceId is omitted.
@@ -157,6 +158,10 @@ export class AuthService {
    * - If already bound to same device: idempotently returns JWT.
    */
   static async confirmDeviceBinding(params: { bindToken: string; deviceInfo?: DeviceInfo }) {
+    if (!env.CHILD_DEVICE_BINDING_ENABLED) {
+      throw new HttpError(403, 'Child device binding is disabled by configuration');
+    }
+
     const decoded = verifyDeviceBindToken(params.bindToken);
 
     const user = await prisma.user.findUnique({

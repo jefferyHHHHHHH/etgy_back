@@ -12,7 +12,7 @@ const loginBodySchema = z.object({
 	username: z.string().min(1),
 	password: z.string().min(1),
 	role: z.nativeEnum(UserRole).optional().describe('登录角色（可选；不传则由后端按账号类型判定/默认）'),
-	deviceId: z.string().min(1).optional().describe('设备唯一标识（儿童端设备绑定）'),
+	deviceId: z.string().min(1).optional().describe('设备唯一标识（仅在 CHILD_DEVICE_BINDING_ENABLED=true 时生效）'),
 	deviceInfo: z
 		.object({
 			platform: z.string().optional().describe('平台（android/ios/etc.）'),
@@ -74,6 +74,11 @@ registerPath({
 	path: '/api/auth/login',
 	summary: '登录',
 	tags: ['Auth'],
+	description:
+		'登录接口支持全局开关 CHILD_DEVICE_BINDING_ENABLED。\n\n' +
+		'- 当值为 false（默认）：儿童账号正常登录，直接返回 token + user，不要求设备绑定。\n' +
+		'- 当值为 true：若 CHILD 账号未绑定设备，返回 { bindRequired: true, bindToken, user }，前端需继续调用 /api/auth/device/bind/confirm。\n' +
+		'- deviceId / deviceInfo 仅在开关开启时参与绑定校验。',
 	request: {
 		body: {
 			content: {
@@ -100,7 +105,8 @@ registerPath({
 	summary: '确认设备绑定（儿童端）',
 	tags: ['Auth'],
 	description:
-		'当 /api/auth/login 返回 bindRequired=true 时，用 bindToken 完成设备绑定，并返回 JWT。\n\n' +
+		'当 CHILD_DEVICE_BINDING_ENABLED=true 且 /api/auth/login 返回 bindRequired=true 时，用 bindToken 完成设备绑定，并返回 JWT。\n\n' +
+		'若开关为 false，则该接口不应被调用；后端会返回 403，报错为 “Child device binding is disabled by configuration”。\n\n' +
 		'规则（MVP）：仅对 CHILD（儿童）账号生效；已绑定则会校验 deviceId 一致性。',
 	request: {
 		body: {

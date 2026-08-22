@@ -124,7 +124,43 @@
 
 提示：Swagger UI 默认在 `http://<host>:<port>/api/docs/`。
 
-### 5.5 微信小程序登录绑定（MVP）
+### 5.5 儿童账号设备绑定开关（全局控制）
+
+本项目新增了全局开关：`CHILD_DEVICE_BINDING_ENABLED`。
+
+- 默认值：`false`
+- 作用：控制儿童账号是否强制执行“设备绑定”逻辑
+- 设计目标：在上线前/灰度期关闭，避免儿童端被强制绑定设备；需要时再按需开启
+
+#### 5.5.1 行为矩阵
+
+| 开关状态 | 儿童账号登录行为 | 是否强制 bindRequired | 是否要求 /api/auth/device/bind/confirm |
+| :------- | :---------------- | :--------------------- | :------------------------------------- |
+| `false` | 正常登录，直接返回 JWT | 否 | 否 |
+| `true` | 若未绑定设备，则返回 `bindRequired: true` | 是 | 是 |
+
+#### 5.5.2 前端注意事项
+
+当 `CHILD_DEVICE_BINDING_ENABLED=false` 时：
+- 前端无需在儿童登录流程里接入 `deviceId` / `bindToken` / `device/bind/confirm`
+- `/api/auth/login` 直接返回 `{ token, user }`
+- 不需要走绑定二次确认流程
+
+当 `CHILD_DEVICE_BINDING_ENABLED=true` 时：
+- 儿童账号登录时，若 `deviceId` 存在且未绑定，后端会返回 `{ bindRequired: true, bindToken, user }`
+- 前端需要用 `bindToken` 调用 `POST /api/auth/device/bind/confirm`
+- 若设备已绑定且 `deviceId` 匹配，则直接登录；若不匹配，则返回 403
+
+#### 5.5.3 相关环境变量
+
+```env
+CHILD_DEVICE_BINDING_ENABLED=false
+DEVICE_BIND_TOKEN_EXPIRE_SECONDS=600
+```
+
+> 说明：`DEVICE_BIND_TOKEN_EXPIRE_SECONDS` 仅在开关开启后才参与短期绑定 token 的有效期控制。
+
+### 5.6 微信小程序登录绑定（MVP）
 
 本项目提供微信小程序端的“登录 + 账号绑定”最小闭环：
 
@@ -139,7 +175,7 @@
 - `WECHAT_MP_APP_SECRET`
 - `WECHAT_MP_BIND_TOKEN_EXPIRE_SECONDS`（可选，默认 600 秒）
 
-### 5.7 讯飞星火 Spark X1.5（可选）
+### 5.8 讯飞星火 Spark X1.5（可选）
 
 本项目已预留 Spark 调用的环境变量与 Service 封装（HTTP + WebSocket）。
 
