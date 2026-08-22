@@ -7,20 +7,37 @@ import OssService from '../services/oss.service';
 
 export class ContentController {
 
+  private static buildMediaMeta(media: { url: string; sourceKey: string | null; expiresInSeconds: number; expiresAt: string | null }) {
+    return {
+      url: media.url,
+      sourceKey: media.sourceKey,
+      expiresInSeconds: media.expiresInSeconds,
+      expiresAt: media.expiresAt,
+    };
+  }
+
   private static async withSignedVideoUrls(video: any) {
     const [videoPlayable, coverPlayable] = await Promise.all([
-      OssService.getPlayableUrl({ keyOrUrl: video.url }),
-      video.coverUrl ? OssService.getPlayableUrl({ keyOrUrl: video.coverUrl }) : Promise.resolve(null),
+      OssService.getPlayableUrlDetails({ keyOrUrl: video.url }),
+      video.coverUrl ? OssService.getPlayableUrlDetails({ keyOrUrl: video.coverUrl }) : Promise.resolve(null),
     ]);
+
+    const videoMedia = ContentController.buildMediaMeta(videoPlayable);
+    const coverMedia = coverPlayable ? ContentController.buildMediaMeta(coverPlayable) : null;
 
     return {
       ...video,
-      url: videoPlayable.url,
-      coverUrl: coverPlayable ? coverPlayable.url : video.coverUrl,
+      url: videoMedia.url,
+      coverUrl: coverMedia ? coverMedia.url : video.coverUrl,
       mediaUrls: {
-        url: videoPlayable.url,
-        coverUrl: coverPlayable ? coverPlayable.url : null,
-        expiresInSeconds: Math.max(videoPlayable.expiresInSeconds || 0, coverPlayable?.expiresInSeconds || 0),
+        url: videoMedia.url,
+        sourceKey: videoMedia.sourceKey,
+        expiresInSeconds: videoMedia.expiresInSeconds,
+        expiresAt: videoMedia.expiresAt,
+        coverUrl: coverMedia ? coverMedia.url : null,
+        coverSourceKey: coverMedia?.sourceKey ?? null,
+        coverExpiresInSeconds: coverMedia?.expiresInSeconds ?? 0,
+        coverExpiresAt: coverMedia?.expiresAt ?? null,
       },
     };
   }
@@ -114,14 +131,27 @@ export class ContentController {
       const itemsWithSignedUrls = await Promise.all(
         result.items.map(async (video: any) => {
           const [videoPlayable, coverPlayable] = await Promise.all([
-            OssService.getPlayableUrl({ keyOrUrl: video.url }),
-            video.coverUrl ? OssService.getPlayableUrl({ keyOrUrl: video.coverUrl }) : Promise.resolve(null),
+            OssService.getPlayableUrlDetails({ keyOrUrl: video.url }),
+            video.coverUrl ? OssService.getPlayableUrlDetails({ keyOrUrl: video.coverUrl }) : Promise.resolve(null),
           ]);
+
+          const videoMedia = ContentController.buildMediaMeta(videoPlayable);
+          const coverMedia = coverPlayable ? ContentController.buildMediaMeta(coverPlayable) : null;
 
           return {
             ...video,
-            url: videoPlayable.url,
-            coverUrl: coverPlayable ? coverPlayable.url : video.coverUrl,
+            url: videoMedia.url,
+            coverUrl: coverMedia ? coverMedia.url : video.coverUrl,
+            mediaUrls: {
+              url: videoMedia.url,
+              sourceKey: videoMedia.sourceKey,
+              expiresInSeconds: videoMedia.expiresInSeconds,
+              expiresAt: videoMedia.expiresAt,
+              coverUrl: coverMedia ? coverMedia.url : null,
+              coverSourceKey: coverMedia?.sourceKey ?? null,
+              coverExpiresInSeconds: coverMedia?.expiresInSeconds ?? 0,
+              coverExpiresAt: coverMedia?.expiresAt ?? null,
+            },
           };
         })
       );
@@ -180,7 +210,7 @@ export class ContentController {
       });
 
       // Admin list UX: presign url/coverUrl directly (and also keep mediaUrls for compatibility).
-    const itemsWithSignedUrls = await Promise.all(result.items.map((v: any) => ContentController.withSignedVideoUrls(v)));
+      const itemsWithSignedUrls = await Promise.all(result.items.map((v: any) => ContentController.withSignedVideoUrls(v)));
 
       return res.json({
         code: 200,
@@ -347,8 +377,8 @@ export class ContentController {
       });
 
       const [videoUrl, coverUrl] = await Promise.all([
-        OssService.getPlayableUrl({ keyOrUrl: video.url }),
-        video.coverUrl ? OssService.getPlayableUrl({ keyOrUrl: video.coverUrl }) : Promise.resolve(null),
+        OssService.getPlayableUrlDetails({ keyOrUrl: video.url }),
+        video.coverUrl ? OssService.getPlayableUrlDetails({ keyOrUrl: video.coverUrl }) : Promise.resolve(null),
       ]);
 
       return res.json({
@@ -357,8 +387,13 @@ export class ContentController {
         data: {
           videoId: video.id,
           url: videoUrl.url,
+          sourceKey: videoUrl.sourceKey,
           expiresInSeconds: videoUrl.expiresInSeconds,
+          expiresAt: videoUrl.expiresAt,
           coverUrl: coverUrl ? coverUrl.url : null,
+          coverSourceKey: coverUrl?.sourceKey ?? null,
+          coverExpiresInSeconds: coverUrl?.expiresInSeconds ?? 0,
+          coverExpiresAt: coverUrl?.expiresAt ?? null,
         },
       });
     } catch (error: any) {
@@ -385,8 +420,8 @@ export class ContentController {
       });
 
       const [videoUrl, coverUrl] = await Promise.all([
-        OssService.getPlayableUrl({ keyOrUrl: video.url }),
-        video.coverUrl ? OssService.getPlayableUrl({ keyOrUrl: video.coverUrl }) : Promise.resolve(null),
+        OssService.getPlayableUrlDetails({ keyOrUrl: video.url }),
+        video.coverUrl ? OssService.getPlayableUrlDetails({ keyOrUrl: video.coverUrl }) : Promise.resolve(null),
       ]);
 
       return res.json({
@@ -395,8 +430,13 @@ export class ContentController {
         data: {
           videoId: video.id,
           url: videoUrl.url,
+          sourceKey: videoUrl.sourceKey,
           expiresInSeconds: videoUrl.expiresInSeconds,
+          expiresAt: videoUrl.expiresAt,
           coverUrl: coverUrl ? coverUrl.url : null,
+          coverSourceKey: coverUrl?.sourceKey ?? null,
+          coverExpiresInSeconds: coverUrl?.expiresInSeconds ?? 0,
+          coverExpiresAt: coverUrl?.expiresAt ?? null,
         },
       });
     } catch (error: any) {

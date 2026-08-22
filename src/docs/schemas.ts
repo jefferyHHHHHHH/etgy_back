@@ -9,6 +9,28 @@ export const VideoMetricsSchema = z
 	})
 	.openapi('VideoMetrics');
 
+export const SignedPlayableUrlSchema = z
+	.object({
+		url: z.string(),
+		sourceKey: z.string().nullable(),
+		expiresInSeconds: z.number().int().nonnegative(),
+		expiresAt: z.string().datetime().nullable(),
+	})
+	.openapi('SignedPlayableUrl');
+
+export const VideoMediaUrlsSchema = z
+	.object({
+		url: z.string().describe('Presigned GET URL for video object'),
+		sourceKey: z.string().nullable().describe('Source OSS key for the video object'),
+		expiresInSeconds: z.number().int().nonnegative().describe('Presign expiration in seconds'),
+		expiresAt: z.string().datetime().nullable().describe('Presigned URL expiration time (ISO)'),
+		coverUrl: z.string().nullable().describe('Presigned GET URL for cover image object'),
+		coverSourceKey: z.string().nullable().describe('Source OSS key for the cover image object'),
+		coverExpiresInSeconds: z.number().int().nonnegative().describe('Presign expiration in seconds for cover image'),
+		coverExpiresAt: z.string().datetime().nullable().describe('Presigned cover URL expiration time (ISO)'),
+	})
+	.openapi('VideoMediaUrls');
+
 export const VideoSchema = z
 	.object({
 		id: z.number().int(),
@@ -42,6 +64,7 @@ export const VideoSchema = z
 		// Relations (kept loose to avoid coupling API docs to Prisma include shapes)
 		uploader: z.any().optional(),
 		college: z.any().optional(),
+		mediaUrls: VideoMediaUrlsSchema.optional(),
 	})
 	.openapi('Video');
 

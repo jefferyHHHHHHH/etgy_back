@@ -84,7 +84,7 @@ export class OssController {
       await fs.unlink(file.path).catch(() => undefined);
 
       // Provide an immediate preview/play URL (private bucket), for convenience.
-      const urlResult = await OssService.getPlayableUrl({
+      const urlResult = await OssService.getPlayableUrlDetails({
         keyOrUrl: finalKey,
         expiresInSeconds: expiresInSeconds ? Number(expiresInSeconds) : undefined,
       });
@@ -98,7 +98,9 @@ export class OssController {
           contentType: file.mimetype,
           size: file.size,
           url: urlResult.url,
+          sourceKey: urlResult.sourceKey,
           expiresInSeconds: urlResult.expiresInSeconds,
+          expiresAt: urlResult.expiresAt,
         },
       });
     } catch (error: any) {
@@ -128,7 +130,7 @@ export class OssController {
 
       if (!keyOrUrl) throw new HttpError(400, 'keyOrUrl is required');
 
-      const result = await OssService.getPlayableUrl({
+      const result = await OssService.getPlayableUrlDetails({
         keyOrUrl,
         expiresInSeconds: expiresInSeconds ? Number(expiresInSeconds) : undefined,
       });
@@ -136,7 +138,12 @@ export class OssController {
       return res.status(200).json({
         code: 200,
         message: 'Success',
-        data: { url: result.url, expiresInSeconds: result.expiresInSeconds },
+        data: {
+          url: result.url,
+          sourceKey: result.sourceKey,
+          expiresInSeconds: result.expiresInSeconds,
+          expiresAt: result.expiresAt,
+        },
       });
     } catch (error: any) {
       if (error instanceof HttpError) {

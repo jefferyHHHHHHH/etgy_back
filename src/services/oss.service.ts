@@ -6,6 +6,13 @@ import { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
+export type SignedPlayableUrl = {
+  url: string;
+  sourceKey: string | null;
+  expiresInSeconds: number;
+  expiresAt: string | null;
+};
+
 class OssService {
   private client: S3Client | null = null;
 
@@ -160,30 +167,47 @@ class OssService {
    * If caller passes a full URL, return it directly.
    * If caller passes an object key, return a presigned GET URL.
    */
-  async getPlayableUrl(params: { keyOrUrl: string; expiresInSeconds?: number }) {
+  async getPlayableUrlDetails(params: { keyOrUrl: string; expiresInSeconds?: number }): Promise<SignedPlayableUrl> {
     const value = String(params.keyOrUrl || '').trim();
     if (!value) throw new HttpError(400, 'keyOrUrl is required');
+
+    const expiresInSeconds = params.expiresInSeconds ?? this.getPresignExpiresSeconds();
 
     // If a full URL is provided and it points to the OSS endpoint, generate a presigned URL.
     // (Qiniu S3-compatible endpoints typically do NOT support anonymous GET.)
     if (this.isHttpUrl(value)) {
       const extractedKey = this.tryExtractKeyFromUrl(value);
-      if (!extractedKey) return { url: value, expiresInSeconds: 0 };
+      if (!extractedKey) {
+        return { url: value, sourceKey: null, expiresInSeconds: 0, expiresAt: null };
+      }
 
-      const expiresInSeconds = params.expiresInSeconds ?? this.getPresignExpiresSeconds();
       const client = this.getClient();
       const command = new GetObjectCommand({ Bucket: env.OSS_BUCKET!, Key: extractedKey });
       const url = await getSignedUrl(client, command, { expiresIn: expiresInSeconds });
-      return { url, expiresInSeconds };
+      return {
+        url,
+        sourceKey: extractedKey,
+        expiresInSeconds,
+        expiresAt: new Date(Date.now() + expiresInSeconds * 1000).toISOString(),
+      };
     }
 
     const key = this.normalizeKey(value);
-    const expiresInSeconds = params.expiresInSeconds ?? this.getPresignExpiresSeconds();
 
     const client = this.getClient();
     const command = new GetObjectCommand({ Bucket: env.OSS_BUCKET!, Key: key });
     const url = await getSignedUrl(client, command, { expiresIn: expiresInSeconds });
-    return { url, expiresInSeconds };
+    return {
+      url,
+      sourceKey: key,
+      expiresInSeconds,
+      expiresAt: new Date(Date.now() + expiresInSeconds * 1000).toISOString(),
+    };
+  }
+
+  async getPlayableUrl(params: { keyOrUrl: string; expiresInSeconds?: number }) {
+    const result = await this.getPlayableUrlDetails(params);
+    return { url: result.url, expiresInSeconds: result.expiresInSeconds };
   }
 
   async presignPutObject(params: {
@@ -207,6 +231,7 @@ class OssService {
       url,
       key,
       expiresInSeconds,
+      expiresAt: new Date(Date.now() + expiresInSeconds * 1000).toISOString(),
     };
   }
 

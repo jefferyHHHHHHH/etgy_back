@@ -5,7 +5,7 @@ import { authMiddleware, requireRole } from '../middlewares/auth.middleware';
 import { UserRole, VideoStatus, CommentStatus } from '../types/enums';
 import { validateBody, validateParams, validateQuery } from '../middlewares/validate.middleware';
 import { apiResponse, BaseResponseSchema, ErrorResponseSchema, registerPath } from '../docs/openapi';
-import { LiveMessageSchema, VideoCommentSchema, VideoSchema, VideoWatchLogSchema } from '../docs/schemas';
+import { LiveMessageSchema, VideoCommentSchema, VideoMediaUrlsSchema, VideoSchema, VideoWatchLogSchema } from '../docs/schemas';
 import { requireAnyPermissions, requirePermissions } from '../middlewares/permission.middleware';
 import { Permission } from '../types/permissions';
 
@@ -62,17 +62,8 @@ const adminListVideosQuerySchema = z.object({
 	pageSize: z.coerce.number().int().min(1).max(50).default(20),
 });
 
-// Admin list response: include presigned media urls for preview/play
-const videoMediaUrlsSchema = z
-	.object({
-		url: z.string().describe('Presigned GET URL for video object'),
-		coverUrl: z.string().nullable().describe('Presigned GET URL for cover image object'),
-		expiresInSeconds: z.number().int().nonnegative().describe('Presign expiration in seconds'),
-	})
-	.openapi('VideoMediaUrls');
-
 const adminVideoItemSchema = VideoSchema.extend({
-	mediaUrls: videoMediaUrlsSchema,
+	mediaUrls: VideoMediaUrlsSchema,
 }).openapi('AdminVideoItem');
 
 const adminVideoPagedResultSchema = z
